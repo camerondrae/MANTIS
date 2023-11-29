@@ -11,9 +11,9 @@ from netCDF4 import Dataset
 YF = 1920
 XF = 1920
 
-YSize = [YF,YF,YF,YF,YF,YF,6400,6400]
-XSize = [XF,XF,XF,XF,XF,XF,6400,6400]
-RSize = [606,909,1212,1515,1818,1212]
+YSize = [YF,YF,YF,YF,YF,YF,YF,6400,6400]
+XSize = [XF,XF,XF,XF,XF,XF,XF,6400,6400]
+RSize = [606,909,1212,1515,1818,1212,606]
 
 LENS = [0,0,0,0,0,0,92162,368642,1474562,5898242]
 RADS = [0,0,0,13,25,50,100,225,int(YF/2),YF]
@@ -38,6 +38,13 @@ CLIMTypes = ('Grasslands','Plains','Desert','Tundra','Snow')
 #	Returns the dot product  between point1 and point2
 def dot(XYZ1, XYZ2):
 	return (XYZ1[0]*XYZ2[0]+XYZ1[1]*XYZ2[1]+XYZ1[2]*XYZ2[2])
+
+def dot_arr1(XYZ1,XYZ2):
+	return np.sum(XYZ1[:,0]*XYZ2[0]+XYZ1[:,1]*XYZ2[1]+XYZ1[:,2]*XYZ2[2])
+
+def dot_arr2(XYZ1,XYZ2):
+	return np.sum(XYZ1[:,0]*XYZ2[:,0]+XYZ1[:,1]*XYZ2[:,1]+XYZ1[:,2]*XYZ2[:,2])
+
 #	Returns the cross product between point1 and point2 as a vector (list)
 def cross(r1,r2):
 	tot = 0.0
@@ -46,6 +53,15 @@ def cross(r1,r2):
 	rz = r1[0]*r2[1]-r1[1]*r2[0]
 	R = (rx,ry,rz)
 	return R
+
+def cross_arr2(r1,r2):
+	r3 = np.zeros(shape=r1.shape,dtype=r1.dtype)
+	r3[:,0] = r1[:,1]*r2[:,2]-r1[:,2]*r2[:,1]
+	r3[:,1] = r1[:,2]*r2[:,0]-r1[:,0]*r2[:,2]
+	r3[:,2] = r1[:,0]*r2[:,1]-r1[:,1]*r2[:,0]
+	return r3
+	
+
 #	Returns the cross product between point1 and point2 as a string
 def crossStr(r1,r2):
 	tot = 0.0
@@ -71,6 +87,15 @@ def dEuclidStr(XYZ1s, XYZ2s):
 #	Returns Euclidean distance between point1 and point2
 def dEuclid(XYZ1, XYZ2):
 	return math.sqrt((XYZ1[0]-XYZ2[0])*(XYZ1[0]-XYZ2[0])+(XYZ1[1]-XYZ2[1])*(XYZ1[1]-XYZ2[1])+(XYZ1[2]-XYZ2[2])*(XYZ1[2]-XYZ2[2]))
+
+def dEuclid_arr2(R1,R2):
+	return np.sqrt((R1[:,0]-R2[:,0])**2+(R1[:,1]-R2[:,1])**2+(R1[:,2]-R2[:,2])**2)
+
+def dSurf_arr2(R1,R2):
+	D0 = np.sqrt((R1[:,0]-R2[:,0])**2+(R1[:,1]-R2[:,1])**2+(R1[:,2]-R2[:,2])**2)
+#	D0 = qb.PositivesOrZeros(
+	return np.arccos(1-D0**2/2)
+
 
 #	Returns the distance on unit sphere between point1 and point 2
 def dSurfStr(point1, point2):
@@ -177,6 +202,7 @@ def NNID(point, radius):
 		if(dSurf(point,(x1,y1,z1)) <= 1.1*radius*distancescale):
 			nearby.append(p.getID())
 	return nearby
+
 
 #	For Cases where distances > pi/2 are not desired
 def NNIDW(point, radius):
@@ -783,6 +809,22 @@ def FindSolarNoon(TimeOfYear, TimeOfDay):
 			ptmin = pts
 	return ptmin
 
+def getSolarXYZ(pt0,TimeOfYear,TimeOfDay):
+	pt = Grid[pt0]
+	if(TimeOfYear > 366):
+		print('Too many days in year!')
+		TimeOfYear = TimeOfYear%366
+	if(TimeOfDay >= 24):
+		print('Too many hours in a day!')
+		TimeOfDay = TimeOfDay%24
+	lam = (TimeOfDay-12)*math.pi/12
+	if(lam < 0):
+		lam = lam+2*math.pi
+	phi = -1*23.45*math.pi/180.0*math.sin((TimeOfYear-79)*math.pi/365.25)
+	x0 = math.cos(phi)*math.cos(lam)
+	y0 = math.cos(phi)*math.sin(lam)
+	z0 = math.sin(phi)
+	return np.array((x0,y0,z0))
 
 #	Returns solar zenith angle (0 = overhead, 5 = sunrise/sunset, 6 = dark)
 def getSolarZenithAngle(pt0,TimeOfYear,TimeOfDay):
@@ -1710,7 +1752,7 @@ def GenIMG(ptID, res):
 		plt.imsave(fname='Assets/Zoom'+str(res)+'/Plane'+str(ptID)+'.png',arr=img)
 #Z1 = list(open('Z3_8.txt'))
 
-def GenIMG2(lat, lon, res):
+def GenIMG_PTS(lat, lon, res):
 	Z1 = list(open('Z'+str(res)+'_8.txt'))
 #	H1 = list(open('H'+str(res)+'_8.txt'))
 	skelpix, ringpix, Textures = LoadTextures(res)
@@ -1725,6 +1767,7 @@ def GenIMG2(lat, lon, res):
 #			for k in NNList[j].split(' '):
 #				TPSet.add(int(k))
 #	tmppts = WriteLocalCRDS(Grid[ptID].getXYZPos(),rad)
+	g = Planes/Zoom
 	phi = lat*math.pi/180.0
 	lam = -1*(360-lon)%360*math.pi/180.0
 #	lam = lon*math.pi/180.0
@@ -1751,6 +1794,169 @@ def GenIMG2(lat, lon, res):
 #			AssignTile(i[0],i[1],i[2],img,Textures,skelpix,ringpix,res)
 			AssignTile2(i[0],i[1],i[2],img,Z1[int(i[0])],skelpix,ringpix,res)
 		plt.imsave(fname='Assets/Zoom'+str(res)+'/Plane'+str(lat*10000)+'x'+str(lon*10000)+'.png',arr=img)
+
+
+#Z1 = list(open('Z4_8.txt'))
+def GenIMG2(lat, lon, res):
+
+	Z1 = list(open('Z'+str(res)+'_8.txt'))
+
+#	H1 = list(open('H'+str(res)+'_8.txt'))
+	skelpix, ringpix, Textures = LoadTextures(res)
+	rad = min(2000.0/(2**res),420)
+#	RADS = [450,450,450,450,450,450]
+#	rad = RADS[res]
+#	NNList = list(open('NN8.txt'))
+#	TPSet = set([])
+#	TPSet.add(ptID)
+#	for i in range(int(rad)):
+#		for j in list(TPSet):
+#			for k in NNList[j].split(' '):
+#				TPSet.add(int(k))
+#	tmppts = WriteLocalCRDSF(Grid[ptID].getXYZPos(),rad)
+	phi = lat*math.pi/180.0
+	lam = -1*(360-lon)%360*math.pi/180.0
+#	lam = lon*math.pi/180.0
+	x0 = math.cos(lam)*math.cos(phi)
+	y0 = math.sin(lam)*math.cos(phi)
+	z0 = -1*math.sin(phi)
+	ptXYZ = (x0,y0,z0)
+	tmppts = WriteLocalCRDS(ptXYZ,min(5*2**(8-res),420))
+	img = np.zeros(shape=(YF,XF,4),dtype='float16')
+	img[:,:] = np.array((0,0,0,1))
+	if(res >= 0):
+#		imgID = np.ones(shape=(YF,XF,4),dtype='float16')
+#		imgID[:,:] = np.array((1,1,1,1))
+#		skelpix, ringpix, Textures = LoadTextures(res)
+		for i in tmppts:
+#			AssignTile(i[0],i[1],i[2],img,Textures,skelpix,ringpix,res)
+			AssignTileH_3(int(i[0]),i[1],i[2],img,Z1[int(i[0])],skelpix,ringpix,lat,lon,res)
+#			AssignID(i[0],i[1],i[2],imgID,skelpix,res)
+		plt.imsave(fname='Assets/Zoom'+str(res)+'/Plane'+str(int(lat*10000))+'x'+str(int(lon*10000))+'.png',arr=img)
+#		plt.imsave(fname='IMG/Zoom'+str(res)+'/Plane'+str(int(lat*10000))+'x'+str(int(lon*10000))+'.png',arr=imgID)
+	else:
+#		skelpix, ringpix, Textures = LoadTextures(res)
+		for i in tmppts:
+#			AssignTile(i[0],i[1],i[2],img,Textures,skelpix,ringpix,res)
+			AssignTile2(i[0],i[1],i[2],img,Z1[int(i[0])],skelpix,ringpix,res)
+		plt.imsave(fname='Assets/Zoom'+str(res)+'/Plane'+str(lat*10000)+'x'+str(lon*10000)+'.png',arr=img)
+
+def GenIMG20(lat, lon, res):
+
+	Z1 = list(open('Z'+str(res)+'_8.txt'))
+
+	skelpix, ringpix, Textures = LoadTextures(res)
+	rad = min(2000.0/(2**res),420)
+	rad = 500
+	phi = lat*math.pi/180.0
+	lam = -1*(360-lon)%360*math.pi/180.0
+	x0 = math.cos(lam)*math.cos(phi)
+	y0 = math.sin(lam)*math.cos(phi)
+	z0 = -1*math.sin(phi)
+	ptXYZ = (x0,y0,z0)
+#	tmppts = WriteLocalCRDS(ptXYZ,min(5*2**(8-res),420))
+	tmppts = WriteLocalCRDS(ptXYZ,420)
+	img = np.zeros(shape=(YF,XF,4),dtype='float16')
+	img[:,:] = np.array((0,0,0,1))
+	if(res >= 0):
+		for i in tmppts:
+			AssignTileH_3(int(i[0]),i[1],i[2],img,Z1[int(i[0])],skelpix,ringpix,lat,lon,res)
+		plt.imsave(fname='AssetsLarge/Zoom'+str(res)+'/Plane'+str(int(lat*10000))+'x'+str(int(lon*10000))+'.png',arr=img)
+	else:
+		for i in tmppts:
+			AssignTile2(i[0],i[1],i[2],img,Z1[int(i[0])],skelpix,ringpix,res)
+		plt.imsave(fname='AssetsLarge/Zoom'+str(res)+'/Plane'+str(lat*10000)+'x'+str(lon*10000)+'.png',arr=img)
+
+
+def GenIMG_MOON(lat, lon, res):
+
+	Z1 = list(open('L'+str(res)+'_8.txt'))
+
+#	H1 = list(open('H'+str(res)+'_8.txt'))
+	skelpix, ringpix, Textures = LoadTextures(res)
+	rad = min(2000.0/(2**res),420)
+#	RADS = [450,450,450,450,450,450]
+#	rad = RADS[res]
+#	NNList = list(open('NN8.txt'))
+#	TPSet = set([])
+#	TPSet.add(ptID)
+#	for i in range(int(rad)):
+#		for j in list(TPSet):
+#			for k in NNList[j].split(' '):
+#				TPSet.add(int(k))
+#	tmppts = WriteLocalCRDSF(Grid[ptID].getXYZPos(),rad)
+	phi = lat*math.pi/180.0
+	lam = -1*(360-lon)%360*math.pi/180.0
+#	lam = lon*math.pi/180.0
+	x0 = math.cos(lam)*math.cos(phi)
+	y0 = math.sin(lam)*math.cos(phi)
+	z0 = -1*math.sin(phi)
+	ptXYZ = (x0,y0,z0)
+	tmppts = WriteLocalCRDS(ptXYZ,min(5*2**(8-res),420))
+	img = np.zeros(shape=(YF,XF,4),dtype='float16')
+	img[:,:] = np.array((0,0,0,1))
+	if(res >= 0):
+#		imgID = np.ones(shape=(YF,XF,4),dtype='float16')
+#		imgID[:,:] = np.array((1,1,1,1))
+#		skelpix, ringpix, Textures = LoadTextures(res)
+		for i in tmppts:
+#			AssignTile(i[0],i[1],i[2],img,Textures,skelpix,ringpix,res)
+			AssignTile2(int(i[0]),i[1],i[2],img,Z1[int(i[0])],skelpix,ringpix,res)
+#			AssignID(i[0],i[1],i[2],imgID,skelpix,res)
+		plt.imsave(fname='Assets/Moon'+str(res)+'/Plane'+str(int(lat*10000))+'x'+str(int(lon*10000))+'.png',arr=img)
+#		plt.imsave(fname='IMG/Zoom'+str(res)+'/Plane'+str(int(lat*10000))+'x'+str(int(lon*10000))+'.png',arr=imgID)
+	else:
+#		skelpix, ringpix, Textures = LoadTextures(res)
+		for i in tmppts:
+#			AssignTile(i[0],i[1],i[2],img,Textures,skelpix,ringpix,res)
+			AssignTile2(i[0],i[1],i[2],img,Z1[int(i[0])],skelpix,ringpix,res)
+		plt.imsave(fname='Assets/Zoom'+str(res)+'/Plane'+str(lat*10000)+'x'+str(lon*10000)+'.png',arr=img)
+
+
+def GenIMG_MARS(lat, lon, res):
+
+	Z1 = list(open('M'+str(res)+'_8.txt'))
+
+#	H1 = list(open('H'+str(res)+'_8.txt'))
+	skelpix, ringpix, Textures = LoadTextures(res)
+	rad = min(2000.0/(2**res),420)
+#	RADS = [450,450,450,450,450,450]
+#	rad = RADS[res]
+#	NNList = list(open('NN8.txt'))
+#	TPSet = set([])
+#	TPSet.add(ptID)
+#	for i in range(int(rad)):
+#		for j in list(TPSet):
+#			for k in NNList[j].split(' '):
+#				TPSet.add(int(k))
+#	tmppts = WriteLocalCRDSF(Grid[ptID].getXYZPos(),rad)
+	phi = lat*math.pi/180.0
+	lam = -1*(360-lon)%360*math.pi/180.0
+#	lam = lon*math.pi/180.0
+	x0 = math.cos(lam)*math.cos(phi)
+	y0 = math.sin(lam)*math.cos(phi)
+	z0 = -1*math.sin(phi)
+	ptXYZ = (x0,y0,z0)
+	tmppts = WriteLocalCRDS(ptXYZ,min(5*2**(8-res),420))
+	img = np.zeros(shape=(YF,XF,4),dtype='float16')
+	img[:,:] = np.array((0,0,0,1))
+	if(res >= 0):
+#		imgID = np.ones(shape=(YF,XF,4),dtype='float16')
+#		imgID[:,:] = np.array((1,1,1,1))
+#		skelpix, ringpix, Textures = LoadTextures(res)
+		for i in tmppts:
+#			AssignTile(i[0],i[1],i[2],img,Textures,skelpix,ringpix,res)
+			AssignTile2(int(i[0]),i[1],i[2],img,Z1[int(i[0])],skelpix,ringpix,res)
+#			AssignID(i[0],i[1],i[2],imgID,skelpix,res)
+		plt.imsave(fname='Assets/Mars'+str(res)+'/Plane'+str(int(lat*10000))+'x'+str(int(lon*10000))+'.png',arr=img)
+#		plt.imsave(fname='IMG/Zoom'+str(res)+'/Plane'+str(int(lat*10000))+'x'+str(int(lon*10000))+'.png',arr=imgID)
+	else:
+#		skelpix, ringpix, Textures = LoadTextures(res)
+		for i in tmppts:
+#			AssignTile(i[0],i[1],i[2],img,Textures,skelpix,ringpix,res)
+			AssignTile2(i[0],i[1],i[2],img,Z1[int(i[0])],skelpix,ringpix,res)
+		plt.imsave(fname='Assets/Zoom'+str(res)+'/Plane'+str(lat*10000)+'x'+str(lon*10000)+'.png',arr=img)
+
 
 def GenIMGT(lat, lon, res):
 	Z1 = list(open('T'+str(res)+'_8.txt'))
@@ -1793,9 +1999,10 @@ def GenIMGT(lat, lon, res):
 			AssignTile2(i[0],i[1],i[2],img,Z1[int(i[0])],skelpix,ringpix,res)
 		plt.imsave(fname='Topo/Zoom'+str(res)+'/Plane'+str(lat*10000)+'x'+str(lon*10000)+'.png',arr=img)
 
+#Z1 = list(open('H50_8.txt'))
 
 def GenIMGH(lat, lon, res):
-	Z1 = list(open('H'+str(res)+'_8.txt'))
+#	Z1 = list(open('H'+str(res)+'_8.txt'))
 	skelpix, ringpix, Textures = LoadTextures(res)
 	rad = min(2000.0/(2**res),420)
 #	RADS = [450,450,450,450,450,450]
@@ -1824,7 +2031,7 @@ def GenIMGH(lat, lon, res):
 #		skelpix, ringpix, Textures = LoadTextures(res)
 		for i in tmppts:
 #			AssignTile(i[0],i[1],i[2],img,Textures,skelpix,ringpix,res)
-			AssignTileH(i[0],i[1],i[2],img,Z1[int(i[0])],skelpix,ringpix,lat,lon,res)
+			AssignTileH_3(i[0],i[1],i[2],img,Z1[int(i[0])],skelpix,ringpix,lat,lon,res)
 #			AssignID(i[0],i[1],i[2],imgID,skelpix,res)
 		plt.imsave(fname='HGT/Zoom'+str(res)+'/Plane'+str(int(lat*10000))+'x'+str(int(lon*10000))+'.png',arr=img)
 #		plt.imsave(fname='IMG/Zoom'+str(res)+'/Plane'+str(int(lat*10000))+'x'+str(int(lon*10000))+'.png',arr=imgID)
@@ -1942,7 +2149,7 @@ def GenIMG4(lat, lon, res):
 		skelpix, ringpix, Textures = LoadTextures(res)
 		for i in tmppts:
 #			AssignTile(i[0],i[1],i[2],img,Textures,skelpix,ringpix,res)
-			AssignID(i[0],i[1],i[2],imgID,skelpix,res)
+			AssignID2(i[0],i[1],i[2],imgID,skelpix,res)
 #		plt.imsave(fname='Assets/Zoom'+str(res)+'/Plane'+str(lat)+'x'+str(lon)+'.png',arr=img)
 		plt.imsave(fname='IMG/Zoom'+str(res)+'/Plane'+str(int(lat*10000))+'x'+str(int(lon*10000))+'.png',arr=imgID)
 	else:
@@ -2365,6 +2572,57 @@ def WriteLocalCRDS(point, radius):
 		nearbycrds.append((nn0,dot(nn,ey)/distancescale,-1*dot(nn,ex)/distancescale))#,-1*dot(nn,ez)/distancescale)
 	return nearbycrds
 
+def WriteLocalCRDSF(point, radius):
+	nearbyNUM = NNIDW(point,radius)
+
+	x0 = point[0]
+	y0 = point[1]
+	z0 = point[2]
+	
+	CRDS = np.load('CRDS.npy')
+	X0 = CRDS[:,0]
+	Y0 = CRDS[:,1]
+	Z0 = CRDS[:,2]
+	
+	PHI = np.arcsin(Z0[:])
+	THE = PHI[:]-math.pi/2.0
+	North = np.array((0.0,0.0,1.0))
+
+	if(z0 == 0):
+		z0 = 0.0001
+	North = (0.0,0.0,1000)
+	phi = math.acos(z0)
+	lat = phi*180/math.pi
+	the = phi-math.pi/2.0
+	if(math.cos(the) == 0):
+		North = (0.0,1.0,0.0)
+	else:
+		North = (0.0,0.0,1.0/math.cos(the))
+	ey0 = (0.0,0.0,1.0)
+	if(math.sin(the) != 0 and math.cos(the) != 0):
+		ey0 = cross(North,point)
+	elif(the == 0):
+		ey0 = (0.0,1.0,0.0)
+	elif(the == math.pi/2.0):
+		ey0 = (x0,y0,1.0)
+	ey = (0.0,1.0,0.0)
+	if(mod(ey0) != 0):
+		ey = (ey0[0]/mod(ey0),ey0[1]/mod(ey0),ey0[2]/mod(ey0))
+	ez = (x0,y0,z0)
+	ex = cross(ey,ez)
+	nearbycrds = np.zeros(shape=(len(nearbyNUM),4),dtype=np.float16)
+	nearbycrds[:,0] = nearbyNUM[:]
+	nearbycrds[:,1] = dot_arr1(CRDS[nearbyNUM[:]],ey)
+	nearbycrds[:,2] = dot_arr1(-1*CRDS[nearbyNUM[:]],ex)
+	nearbycrds[:,3] = dot_arr1(-1*CRDS[nearbyNUM[:]],ez)
+#	np.save('Planes/NPY/Plane'+str(int(lat*10000))
+#	nearbycrds = []
+#	ct = 0
+#	for nn0 in nearbyNUM:
+#		nn = Grid[nn0].getXYZPos()
+#		nearbycrds.append((nn0,dot(nn,ey)/distancescale,-1*dot(nn,ex)/distancescale))#,-1*dot(nn,ez)/distancescale)
+	return nearbycrds
+
 def WriteLocalCRDS2(ptID, radius):
 	point = Grid[ptID].getXYZPos()
 	TPSet = set([])#NNID(point,radius)
@@ -2440,6 +2698,70 @@ def WriteLocalCRDS3(point, radius):
 		nearbycrds.append((nn0,dot(nn,ey)/distancescale,-1*dot(nn,ex)/distancescale))
 #		nearbycrds.append( ( nn0 , math.atan( -1*dot(nn,ey)/dot(nn,ez) )/distancescale , math.atan( dot(nn,ex)/dot(nn,ez) )/distancescale ) )
 	return nearbycrds
+
+def WriteLocalCRDSPrint():
+	Ex = np.zeros(shape=(1474562,3),dtype=np.float16)
+	Ey = np.zeros(shape=(1474562,3),dtype=np.float16)
+	Ez = np.zeros(shape=(1474562,3),dtype=np.float16)
+
+	for ptID in range(1474562):
+		point = Grid[ptID].getXYZPos()
+		x0 = point[0]
+		y0 = point[1]
+		z0 = point[2]
+		if(z0 == 0):
+			z0 = 0.0001
+		North = (0.0,0.0,1000)
+		phi = math.acos(z0)
+		the = phi-math.pi/2.0
+		if(math.cos(the) == 0):
+			North = (0.0,1.0,0.0)
+		else:
+			North = (0.0,0.0,1.0/math.cos(the))
+		ey0 = (0.0,0.0,1.0)
+		if(math.sin(the) != 0 and math.cos(the) != 0):
+			ey0 = cross(North,point)
+		elif(the == 0):
+			ey0 = (0.0,1.0,0.0)
+		elif(the == math.pi/2.0):
+			ey0 = (x0,y0,1.0)
+		ey = (0.0,1.0,0.0)
+		if(mod(ey0) != 0):
+			ey = (ey0[0]/mod(ey0),ey0[1]/mod(ey0),ey0[2]/mod(ey0))
+		ez = (x0,y0,z0)
+		ex = cross(ey,ez)
+		Ex[ptID,:] = np.array((ey[0],ey[1],ey[2]))
+		Ey[ptID,:] = np.array((-1*ex[0],-1*ex[1],-1*ex[2]))
+		Ez[ptID,:] = np.array((ez[0],ez[1],ez[2]))
+	np.save('Ex8.npy',arr=Ex)
+	np.save('Ey8.npy',arr=Ey)
+	np.save('Ez8.npy',arr=Ez)
+
+	
+
+def LoadTexturesF(res):
+	img0 = plt.imread('./imgcirc/Textures256.png')
+	img = img0						# Need to resize image to res
+	imgsize = 360
+	if(res >= 0):
+		imgsize = 2**res
+	img = plt.imread('./imgcirc/Textures'+str(imgsize)+'.png')
+	imgarr = np.zeros(shape=(5,4,19,imgsize,imgsize,4),dtype='float32')
+	imgskel = img[imgsize*0:imgsize*0+imgsize,19*imgsize:19*imgsize+imgsize]
+	plt.imsave(fname='testskl.png',arr=imgskel)
+	imgring = img[imgsize*1:imgsize*1+imgsize,19*imgsize:19*imgsize+imgsize]
+	ct = 0
+	for i in range(5):
+		for j in range(3):
+			for k in range(18):
+				imgarr[i,j,k,:,:] = img[imgsize*ct:imgsize*ct+imgsize,k*imgsize:k*imgsize+imgsize]
+			imgarr[i,j,18,:,:] = img[imgsize*14:imgsize*14+imgsize,1*imgsize:1*imgsize+imgsize]
+			ct += 1
+		for k in range(18):
+			imgarr[i,3,k,:,:] = img[imgsize*ct:imgsize*ct+imgsize,18*imgsize:18*imgsize+imgsize]
+			imgarr[i,3,18,:,:] = img[imgsize*14:imgsize*14+imgsize,1*imgsize:1*imgsize+imgsize]
+	return imgskel,imgring,imgarr
+	plt.imsave(fname='test.png',arr=imgskel)
 
 def LoadTextures(res):
 	img0 = plt.imread('./imgcirc/Textures256.png')
@@ -2632,7 +2954,7 @@ def AssignTile3(pid,x1,y1,img0,Textures,skel0,msk,res):
 				img0[y0+j+1,x0+i+1,:] = Textures[IGBP,RGN,CLIM,j,i,:]
 	return img0
 
-def AssignTileH(pid,x1,y1,img0,Textures,skel0,msk,lat,lon,res):
+def AssignTileH(pid,x1,y1,img0,Textures,skel,msk,lat,lon,res):
 	imgsize = 360
 	if(res >= 0):
 		imgsize = 2**res
@@ -2656,12 +2978,14 @@ def AssignTileH(pid,x1,y1,img0,Textures,skel0,msk,lat,lon,res):
 			Order = (0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63)
 		if(res == 4):
 			Order = list(range(256))
+		if(res == 5):
+			Order = list(range(1024))
 	ct = 0
 	lonat = Grid[pid].getLonDeg()
 	if(lat >= -50 and lat <= 50):
 		for i in range(imgsize):
 			for j in range(imgsize):
-				if((res == 0 or res == 1 or res == 2 or res == 3 or res == 4 or skel[i,j,0] != skel[0,0,0]) and (x0+i+1) > 0 and (x0+i+1) < XSize[res] and (y0+j+1) > 0 and (y0+j+1) < YSize[res]):
+				if((res == 0 or res == 1 or res == 2 or res == 3 or res == 4 or res == 5) and (skel[i,j,0] != skel[0,0,0]) and (x0+i+1) > 0 and (x0+i+1) < XSize[res] and (y0+j+1) > 0 and (y0+j+1) < YSize[res]):
 					if(res == 0):
 						img0[y0+j+1,x0+i+1,:] = INT2Color(int(Textures))
 					if(res == 1):
@@ -2671,13 +2995,16 @@ def AssignTileH(pid,x1,y1,img0,Textures,skel0,msk,lat,lon,res):
 					if(res == 3):
 						img0[y0+j+1,x0+i+1,:] = INT2Color(int(strdat[Order[ct]]))
 					if(res == 4):
-						img0[y0+j+1,x0+i+1,:] = ColorMapH(int(strdat[Order[ct]]))
+						img0[y0+j+1,x0+i+1,:] = INT2Color(int(strdat[Order[ct]]))
+					if(res == 5):
+						img0[y0+j+1,x0+i+1,:] = INT2Color(int(strdat[Order[ct]]))
+
 				ct += 1
 	elif(lat < -50):
 		if( (lonat-lon)%360 <= 45 or (lonat-lon)%360 > 315 ):
 			for i in range(imgsize):
 				for j in range(imgsize):
-					if((res == 0 or res == 1 or res == 2 or res == 3 or res == 4 or skel[i,j,0] != skel[0,0,0]) and (x0+i+1) > 0 and (x0+i+1) < XSize[res] and (y0+j+1) > 0 and (y0+j+1) < YSize[res]):
+					if((res == 0 or res == 1 or res == 2 or res == 3 or res == 4 or res == 5) and (skel[i,j,0] != skel[0,0,0]) and (x0+i+1) > 0 and (x0+i+1) < XSize[res] and (y0+j+1) > 0 and (y0+j+1) < YSize[res]):
 						if(res == 0):
 							img0[y0+j+1,x0+i+1,:] = INT2Color(int(Textures))
 						if(res == 1):
@@ -2687,12 +3014,14 @@ def AssignTileH(pid,x1,y1,img0,Textures,skel0,msk,lat,lon,res):
 						if(res == 3):
 							img0[y0+j+1,x0+i+1,:] = INT2Color(int(strdat[Order[ct]]))
 						if(res == 4):
-							img0[y0+j+1,x0+i+1,:] = ColorMapH(int(strdat[Order[ct]]))
+							img0[y0+j+1,x0+i+1,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 5):
+							img0[y0+j+1,x0+i+1,:] = INT2Color(int(strdat[Order[ct]]))
 					ct += 1
 		elif( (lonat-lon)%360 <= 135 and (lonat-lon)%360 > 45 ):
 			for i in range(imgsize):
 				for j in range(imgsize):
-					if((res == 0 or res == 1 or res == 2 or res == 3 or res == 4 or skel[i,j,0] != skel[0,0,0]) and (x0+imgsize-j) >= 0 and (x0+imgsize-j) < XSize[res] and (y0+i+1) > 0 and (y0+i+1) < YSize[res]):
+					if((res == 0 or res == 1 or res == 2 or res == 3 or res == 4 or res == 5) and (skel[i,j,0] != skel[0,0,0]) and (x0+imgsize-j) >= 0 and (x0+imgsize-j) < XSize[res] and (y0+i+1) > 0 and (y0+i+1) < YSize[res]):
 						if(res == 0):
 							img0[y0+j+1,x0+i+1,:] = INT2Color(int(Textures))
 						if(res == 1):
@@ -2702,13 +3031,15 @@ def AssignTileH(pid,x1,y1,img0,Textures,skel0,msk,lat,lon,res):
 						if(res == 3):
 							img0[y0+i+1,x0+imgsize-j,:] = INT2Color(int(strdat[Order[ct]]))	
 						if(res == 4):
-							img0[y0+i+1,x0+imgsize-j,:] = ColorMapH(int(strdat[Order[ct]]))
+							img0[y0+i+1,x0+imgsize-j,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 5):
+							img0[y0+i+1,x0+imgsize-j,:] = INT2Color(int(strdat[Order[ct]]))
 					ct += 1				
 	
 		elif( (lonat-lon)%360 <= 225 and (lonat-lon)%360 > 135 ):
 			for i in range(imgsize):
 				for j in range(imgsize):
-					if((res == 0 or res == 1 or res == 2 or res == 3 or res == 4 or skel[i,j,0] != skel[0,0,0]) and (x0+imgsize-i) > 0 and (x0+imgsize-i) < XSize[res] and (y0+imgsize-j) > 0 and (y0+imgsize-j) < YSize[res]):
+					if((res == 0 or res == 1 or res == 2 or res == 3 or res == 4 or res == 5) and (skel[i,j,0] != skel[0,0,0]) and (x0+imgsize-i) > 0 and (x0+imgsize-i) < XSize[res] and (y0+imgsize-j) > 0 and (y0+imgsize-j) < YSize[res]):
 						if(res == 0):
 							img0[y0+j+1,x0+i+1,:] = INT2Color(int(Textures))
 						if(res == 1):
@@ -2718,13 +3049,15 @@ def AssignTileH(pid,x1,y1,img0,Textures,skel0,msk,lat,lon,res):
 						if(res == 3):
 							img0[y0+imgsize-j,x0+imgsize-i,:] = INT2Color(int(strdat[Order[ct]]))
 						if(res == 4):
-							img0[y0+imgsize-j,x0+imgsize-i,:] = ColorMapH(int(strdat[Order[ct]]))
+							img0[y0+imgsize-j,x0+imgsize-i,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 5):
+							img0[y0+imgsize-j,x0+imgsize-i,:] = INT2Color(int(strdat[Order[ct]]))
 					ct += 1
 
 		else:
 			for i in range(imgsize):
 				for j in range(imgsize):
-					if((res == 0 or res == 1 or res == 2 or res == 3 or res == 4 or skel[i,j,0] != skel[0,0,0]) and (x0+j+1) > 0 and (x0+j+1) < XSize[res] and (y0+imgsize-i) > 0 and (y0+imgsize-i) < YSize[res]):
+					if((res == 0 or res == 1 or res == 2 or res == 3 or res == 4 or res == 5) and (skel[i,j,0] != skel[0,0,0]) and (x0+j+1) > 0 and (x0+j+1) < XSize[res] and (y0+imgsize-i) > 0 and (y0+imgsize-i) < YSize[res]):
 						if(res == 0):
 							img0[y0+j+1,x0+i+1,:] = INT2Color(int(Textures))
 						if(res == 1):
@@ -2734,14 +3067,16 @@ def AssignTileH(pid,x1,y1,img0,Textures,skel0,msk,lat,lon,res):
 						if(res == 3):
 							img0[y0+imgsize-i,x0+j+1,:] = INT2Color(int(strdat[Order[ct]]))
 						if(res == 4):
-							img0[y0+imgsize-i,x0+j+1,:] = ColorMapH(int(strdat[Order[ct]]))
+							img0[y0+imgsize-i,x0+j+1,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 5):
+							img0[y0+imgsize-i,x0+j+1,:] = INT2Color(int(strdat[Order[ct]]))
 					ct += 1
 
 	elif(lat > 50):
 		if( (lonat-lon)%360 <= 45 or (lonat-lon)%360 > 315 ):
 			for i in range(imgsize):
 				for j in range(imgsize):
-					if((res == 0 or res == 1 or res == 2 or res == 3 or res == 4 or skel[i,j,0] != skel[0,0,0]) and (x0+i+1) > 0 and (x0+i+1) < XSize[res] and (y0+j+1) > 0 and (y0+j+1) < YSize[res]):
+					if((res == 0 or res == 1 or res == 2 or res == 3 or res == 4 or res == 5) and (skel[i,j,0] != skel[0,0,0]) and (x0+i+1) > 0 and (x0+i+1) < XSize[res] and (y0+j+1) > 0 and (y0+j+1) < YSize[res]):
 						if(res == 0):
 							img0[y0+j+1,x0+i+1,:] = INT2Color(int(Textures))
 						if(res == 1):
@@ -2751,12 +3086,14 @@ def AssignTileH(pid,x1,y1,img0,Textures,skel0,msk,lat,lon,res):
 						if(res == 3):
 							img0[y0+j+1,x0+i+1,:] = INT2Color(int(strdat[Order[ct]]))
 						if(res == 4):
-							img0[y0+j+1,x0+i+1,:] = ColorMapH(int(strdat[Order[ct]]))
+							img0[y0+j+1,x0+i+1,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 5):
+							img0[y0+j+1,x0+i+1,:] = INT2Color(int(strdat[Order[ct]]))
 					ct += 1
 		elif( (lonat-lon)%360 <= 135 and (lonat-lon)%360 > 45 ):
 			for i in range(imgsize):
 				for j in range(imgsize):
-					if((res == 0 or res == 1 or res == 2 or res == 3 or res == 4 or skel[i,j,0] != skel[0,0,0]) and (x0+j+1) > 0 and (x0+j+1) < XSize[res] and (y0+imgsize-i) > 0 and (y0+imgsize-i) < YSize[res]):
+					if((res == 0 or res == 1 or res == 2 or res == 3 or res == 4 or res == 5) and (skel[i,j,0] != skel[0,0,0]) and (x0+j+1) > 0 and (x0+j+1) < XSize[res] and (y0+imgsize-i) > 0 and (y0+imgsize-i) < YSize[res]):
 						if(res == 0):
 							img0[y0+j+1,x0+i+1,:] = INT2Color(int(Textures))
 						if(res == 1):
@@ -2766,13 +3103,15 @@ def AssignTileH(pid,x1,y1,img0,Textures,skel0,msk,lat,lon,res):
 						if(res == 3):
 							img0[y0+imgsize-i,x0+j+1,:] = INT2Color(int(strdat[Order[ct]]))
 						if(res == 4):
-							img0[y0+imgsize-i,x0+j+1,:] = ColorMapH(int(strdat[Order[ct]]))
+							img0[y0+imgsize-i,x0+j+1,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 5):
+							img0[y0+imgsize-i,x0+j+1,:] = INT2Color(int(strdat[Order[ct]]))
 					ct += 1
 	
 		elif( (lonat-lon)%360 <= 225 and (lonat-lon)%360 > 135 ):
 			for i in range(imgsize):
 				for j in range(imgsize):
-					if((res == 0 or res == 1 or res == 2 or res == 3 or res == 4 or skel[i,j,0] != skel[0,0,0]) and (x0+imgsize-i) > 0 and (x0+imgsize-i) < XSize[res] and (y0+imgsize-j) > 0 and (y0+imgsize-j) < YSize[res]):
+					if((res == 0 or res == 1 or res == 2 or res == 3 or res == 4 or res == 5) and (skel[i,j,0] != skel[0,0,0]) and (x0+imgsize-i) > 0 and (x0+imgsize-i) < XSize[res] and (y0+imgsize-j) > 0 and (y0+imgsize-j) < YSize[res]):
 						if(res == 0):
 							img0[y0+j+1,x0+i+1,:] = INT2Color(int(Textures))
 						if(res == 1):
@@ -2782,13 +3121,15 @@ def AssignTileH(pid,x1,y1,img0,Textures,skel0,msk,lat,lon,res):
 						if(res == 3):
 							img0[y0+imgsize-j,x0+imgsize-i,:] = INT2Color(int(strdat[Order[ct]]))
 						if(res == 4):
-							img0[y0+imgsize-j,x0+imgsize-i,:] = ColorMapH(int(strdat[Order[ct]]))
+							img0[y0+imgsize-j,x0+imgsize-i,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 5):
+							img0[y0+imgsize-j,x0+imgsize-i,:] = INT2Color(int(strdat[Order[ct]]))
 					ct += 1
 
 		else:
 			for i in range(imgsize):
 				for j in range(imgsize):
-					if((res == 0 or res == 1 or res == 2 or res == 3 or res == 4 or skel[i,j,0] != skel[0,0,0]) and (x0+imgsize-j) >= 0 and (x0+imgsize-j) < XSize[res] and (y0+i+1) > 0 and (y0+i+1) < YSize[res]):
+					if((res == 0 or res == 1 or res == 2 or res == 3 or res == 4 or res == 5) and (skel[i,j,0] != skel[0,0,0]) and (x0+imgsize-j) >= 0 and (x0+imgsize-j) < XSize[res] and (y0+i+1) > 0 and (y0+i+1) < YSize[res]):
 						if(res == 0):
 							img0[y0+j+1,x0+i+1,:] = INT2Color(int(Textures))
 						if(res == 1):
@@ -2798,7 +3139,9 @@ def AssignTileH(pid,x1,y1,img0,Textures,skel0,msk,lat,lon,res):
 						if(res == 3):
 							img0[y0+i+1,x0+imgsize-j,:] = INT2Color(int(strdat[Order[ct]]))	
 						if(res == 4):
-							img0[y0+i+1,x0+imgsize-j,:] = ColorMapH(int(strdat[Order[ct]]))
+							img0[y0+i+1,x0+imgsize-j,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 5):
+							img0[y0+i+1,x0+imgsize-j,:] = INT2Color(int(strdat[Order[ct]]))
 					ct += 1		
 		
 	
@@ -2819,6 +3162,538 @@ def AssignTileH(pid,x1,y1,img0,Textures,skel0,msk,lat,lon,res):
 #					img0[y0+j+1,x0+i+1,:] = ColorMapH(int(strdat[Order[ct]]))
 #			ct += 1
 					
+						
+#	return img0
+
+
+def AssignTileH_3(pid,x1,y1,img0,Textures,skel,msk,lat,lon,res):
+#	print(pid)
+#	print(x1)
+#	print(y1)
+	OR225 = list(open('imgcirc/Turn16/O'+str(res)+'R225_2.txt'))
+	OR45 = list(open('imgcirc/O'+str(res)+'R45.txt'))
+	imgsize = 360
+	if(res >= 0):
+		imgsize = 2**res
+	x0 = int((x1)*(imgsize+1))+int(XSize[res]/2)#-int(imgsize/2.0)
+	y0 = int((y1)*(imgsize+1))+int(YSize[res]/2)#-int(imgsize/2.0)
+	IGBP = int(Grid[pid].getIGBP())
+	CLIM = int(Grid[pid].getCLIM())
+	RGN = int(Grid[pid].getRGN())
+	strdat = []
+	Order = (0,2,1,3)
+	if(res >  0):
+		strdat = Textures.split(' ')
+		if(res == 1):
+			Order = (0,2,1,3)
+		if(res == 2):
+			Order = (0,6,15,2,7,8,5,14,9,4,13,11,1,10,12,3)
+			Order = (0,7,9,2,6,8,4,10,15,5,13,12,1,14,11,3)
+			Order = (0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15)		# Standard Asset Ordering
+			Order = (0,4,8,12,1,5,9,13,2,6,10,14,3,7,11,15)		# Sandard  Star  Ordering
+		if(res == 3):
+			Order = (0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63)
+		if(res == 4):
+			Order = list(range(256))
+		if(res == 5):
+			Order = list(range(1024))
+	ct = 0
+	lonat = Grid[pid].getLonDeg()
+	if(lat >= -10 and lat <= 10):
+		for i in range(imgsize):
+			for j in range(imgsize):
+				if((res == 0 or res == 1 or res == 2 or res == 3 or res == 4 or res == 5) and (skel[i,j,0] != skel[0,0,0]) and (x0+i+1) > 0 and (x0+i+1) < XSize[res] and (y0+j+1) > 0 and (y0+j+1) < YSize[res]):
+					if(res == 0):
+						img0[y0+j+1,x0+i+1,:] = INT2Color(int(Textures))
+					if(res == 1):
+						img0[y0+j+1,x0+i+1,:] = INT2Color(int(strdat[Order[ct]]))
+					if(res == 2):
+						img0[y0+j+1,x0+i+1,:] = INT2Color(int(strdat[Order[ct]]))
+					if(res == 3):
+						img0[y0+j+1,x0+i+1,:] = INT2Color(int(strdat[Order[ct]]))
+					if(res == 4):
+						img0[y0+j+1,x0+i+1,:] = INT2Color(int(strdat[Order[ct]]))
+					if(res == 5):
+						img0[y0+j+1,x0+i+1,:] = INT2Color(int(strdat[Order[ct]]))
+
+				ct += 1
+	elif(lat < -10):
+
+#		NORTH
+		if( (lonat-lon)%360 <= 11.25 or (lonat-lon)%360 > 348.75 ):
+			for i in range(imgsize):
+				for j in range(imgsize):
+					if((res == 0 or res == 1 or res == 2 or res == 3 or res == 4 or res == 5) and (skel[i,j,0] != skel[0,0,0]) and (x0+i+1) > 0 and (x0+i+1) < XSize[res] and (y0+j+1) > 0 and (y0+j+1) < YSize[res]):
+						if(res == 0):
+							img0[y0+j+1,x0+i+1,:] = INT2Color(int(Textures))
+						if(res == 1):
+							img0[y0+j+1,x0+i+1,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 2):
+							img0[y0+j+1,x0+i+1,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 3):
+							img0[y0+j+1,x0+i+1,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 4):
+							img0[y0+j+1,x0+i+1,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 5):
+							img0[y0+j+1,x0+i+1,:] = INT2Color(int(strdat[Order[ct]]))
+					ct += 1
+#		NORTHNORTHEAST
+		elif( (lonat-lon)%360 <= 33.75 and (lonat-lon)%360 > 11.25 ):
+
+			for i in range(imgsize):
+				for j in range(imgsize):
+					I = int(float(OR225[Order[imgsize*i+j]])/imgsize)
+					J = int(OR225[Order[imgsize*i+j]])%imgsize
+					if((res == 0 or res == 1 or res == 2 or res == 3 or res == 4 or res == 5)  and (skel[I,J,0] != skel[0,0,0]) and (x0+I+1) > 0 and (x0+I+1) < XSize[res] and (y0+J+1) > 0 and (y0+J+1) < YSize[res]):
+						if(res == 0):
+							img0[y0+j+1,x0+i+1,:] = INT2Color(int(Textures))
+						if(res == 1):
+							img0[y0+j+1,x0+i+1,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 2):
+							img0[y0+J+1,min(x0+I+1,1919),:] = INT2Color(int(strdat[Order[ct]]))			
+						if(res == 3):
+							img0[y0+J+1,min(x0+I+1,1919),:] = INT2Color(int(strdat[Order[ct]]))	
+						if(res == 4):
+							img0[y0+J+1,min(x0+I+1,1919),:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 5):
+							img0[y0+J+1,min(x0+I+1,1919),:] = INT2Color(int(strdat[Order[ct]]))#INT2Color(int(strdat[int(OR45[Order[ct]])]))
+					ct += 1				
+
+
+
+
+#		NORTHEAST
+		elif( (lonat-lon)%360 <= 56.25 and (lonat-lon)%360 > 33.75 ):
+			for i in range(imgsize):
+				for j in range(imgsize):
+					I = int(float(OR45[Order[imgsize*i+j]])/imgsize)
+					J = int(OR45[Order[imgsize*i+j]])%imgsize
+					if((res == 0 or res == 1 or res == 2 or res == 3 or res == 4 or res == 5)  and (skel[I,J,0] != skel[0,0,0]) and (x0+I+1) > 0 and (x0+I+1) < XSize[res] and (y0+J+1) > 0 and (y0+J+1) < YSize[res]):
+						if(res == 0):
+							img0[y0+j+1,x0+i+1,:] = INT2Color(int(Textures))
+						if(res == 1):
+							img0[y0+j+1,x0+i+1,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 2):
+							img0[y0+J+1,min(x0+I+1,1919),:] = INT2Color(int(strdat[Order[ct]]))			
+						if(res == 3):
+							img0[y0+J+1,min(x0+I+1,1919),:] = INT2Color(int(strdat[Order[ct]]))	
+						if(res == 4):
+							img0[y0+J+1,min(x0+I+1,1919),:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 5):
+							img0[y0+J+1,min(x0+I+1,1919),:] = INT2Color(int(strdat[Order[ct]]))#INT2Color(int(strdat[int(OR45[Order[ct]])]))
+					ct += 1				
+
+#		EASTNORTHEAST	
+		elif( (lonat-lon)%360 <= 78.75 and (lonat-lon)%360 > 56.25 ):
+			for i in range(imgsize):
+				for j in range(imgsize):
+					if((res == 0 or res == 1 or res == 2 or res == 3 or res == 4 or res == 5) and (skel[i,j,0] != skel[0,0,0]) and (x0+imgsize-j) >= 0 and (x0+imgsize-j) < XSize[res] and (y0+i+1) > 0 and (y0+i+1) < YSize[res]):
+						if(res == 0):
+							img0[y0+j+1,x0+i+1,:] = INT2Color(int(Textures))
+						if(res == 1):
+							img0[y0+i+1,x0+imgsize-j,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 2):
+							img0[y0+i+1,x0+imgsize-j,:] = INT2Color(int(strdat[Order[ct]]))			
+						if(res == 3):
+							img0[y0+i+1,x0+imgsize-j,:] = INT2Color(int(strdat[Order[ct]]))	
+						if(res == 4):
+							img0[y0+i+1,x0+imgsize-j,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 5):
+							img0[y0+i+1,x0+imgsize-j,:] = INT2Color(int(strdat[int(OR225[Order[ct]])]))
+					ct += 1
+
+#		EAST	
+		elif( (lonat-lon)%360 <= 101.25 and (lonat-lon)%360 > 78.75):
+			for i in range(imgsize):
+				for j in range(imgsize):
+					if((res == 0 or res == 1 or res == 2 or res == 3 or res == 4 or res == 5) and (skel[i,j,0] != skel[0,0,0]) and (x0+imgsize-j) >= 0 and (x0+imgsize-j) < XSize[res] and (y0+i+1) > 0 and (y0+i+1) < YSize[res]):
+						if(res == 0):
+							img0[y0+j+1,x0+i+1,:] = INT2Color(int(Textures))
+						if(res == 1):
+							img0[y0+i+1,x0+imgsize-j,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 2):
+							img0[y0+i+1,x0+imgsize-j,:] = INT2Color(int(strdat[Order[ct]]))			
+						if(res == 3):
+							img0[y0+i+1,x0+imgsize-j,:] = INT2Color(int(strdat[Order[ct]]))	
+						if(res == 4):
+							img0[y0+i+1,x0+imgsize-j,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 5):
+							img0[y0+i+1,x0+imgsize-j,:] = INT2Color(int(strdat[Order[ct]]))
+					ct += 1
+#		EASTSOUTHEAST	
+		elif( (lonat-lon)%360 <= 123.75 and (lonat-lon)%360 > 101.25):
+			for i in range(imgsize):
+				for j in range(imgsize):
+					I = int(float(OR225[Order[imgsize*i+j]])/imgsize)
+					J = int(OR225[Order[imgsize*i+j]])%imgsize
+					if((res == 0 or res == 1 or res == 2 or res == 3 or res == 4 or res == 5) and (skel[I,J,0] != skel[0,0,0]) and (x0+imgsize-J) >= 0 and (x0+imgsize-J) < XSize[res] and (y0+I+1) > 0 and (y0+I+1) < YSize[res]):
+						if(res == 0):
+							img0[y0+j+1,x0+i+1,:] = INT2Color(int(Textures))
+						if(res == 1):
+							img0[y0+i+1,x0+imgsize-j,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 2):
+							img0[y0+I+1,x0+imgsize-J,:] = INT2Color(int(strdat[Order[ct]]))			
+						if(res == 3):
+							img0[y0+I+1,x0+imgsize-J,:] = INT2Color(int(strdat[Order[ct]]))	
+						if(res == 4):
+							img0[y0+I+1,x0+imgsize-J,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 5):
+							img0[y0+I+1,x0+imgsize-J,:] = INT2Color(int(strdat[Order[ct]]))#INT2Color(int(strdat[int(OR45[Order[ct]])]))
+					ct += 1				
+
+#		SOUTHEAST	
+		elif( (lonat-lon)%360 <= 146.25 and (lonat-lon)%360 > 123.75 ):
+			for i in range(imgsize):
+				for j in range(imgsize):
+					I = int(float(OR45[Order[imgsize*i+j]])/imgsize)
+					J = int(OR45[Order[imgsize*i+j]])%imgsize
+					if((res == 0 or res == 1 or res == 2 or res == 3 or res == 4 or res == 5) and (skel[I,J,0] != skel[0,0,0]) and (x0+imgsize-J) >= 0 and (x0+imgsize-J) < XSize[res] and (y0+I+1) > 0 and (y0+I+1) < YSize[res]):
+						if(res == 0):
+							img0[y0+j+1,x0+i+1,:] = INT2Color(int(Textures))
+						if(res == 1):
+							img0[y0+i+1,x0+imgsize-j,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 2):
+							img0[y0+I+1,x0+imgsize-J,:] = INT2Color(int(strdat[Order[ct]]))			
+						if(res == 3):
+							img0[y0+I+1,x0+imgsize-J,:] = INT2Color(int(strdat[Order[ct]]))	
+						if(res == 4):
+							img0[y0+I+1,x0+imgsize-J,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 5):
+							img0[y0+I+1,x0+imgsize-J,:] = INT2Color(int(strdat[Order[ct]]))#INT2Color(int(strdat[int(OR45[Order[ct]])]))
+					ct += 1				
+#		SOUTHSOUTHEAST
+		elif( (lonat-lon)%360 <= 168.75 and (lonat-lon)%360 > 146.25 ):
+			for i in range(imgsize):
+				for j in range(imgsize):
+					if((res == 0 or res == 1 or res == 2 or res == 3 or res == 4 or res == 5) and (skel[i,j,0] != skel[0,0,0]) and (x0+imgsize-i) > 0 and (x0+imgsize-i) < XSize[res] and (y0+imgsize-j) > 0 and (y0+imgsize-j) < YSize[res]):
+						if(res == 0):
+							img0[y0+j+1,x0+i+1,:] = INT2Color(int(Textures))
+						if(res == 1):
+							img0[y0+imgsize-j,x0+imgsize-i,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 2):
+							img0[y0+imgsize-j,x0+imgsize-i,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 3):
+							img0[y0+imgsize-j,x0+imgsize-i,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 4):
+							img0[y0+imgsize-j,x0+imgsize-i,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 5):
+							img0[y0+imgsize-j,x0+imgsize-i,:] = INT2Color(int(strdat[int(OR225[Order[ct]])]))
+					ct += 1
+#		SOUTH	
+		elif( (lonat-lon)%360 <= 191.25 and (lonat-lon)%360 > 168.75 ):
+			for i in range(imgsize):
+				for j in range(imgsize):
+					if((res == 0 or res == 1 or res == 2 or res == 3 or res == 4 or res == 5) and (skel[i,j,0] != skel[0,0,0]) and (x0+imgsize-i) > 0 and (x0+imgsize-i) < XSize[res] and (y0+imgsize-j) > 0 and (y0+imgsize-j) < YSize[res]):
+						if(res == 0):
+							img0[y0+j+1,x0+i+1,:] = INT2Color(int(Textures))
+						if(res == 1):
+							img0[y0+imgsize-j,x0+imgsize-i,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 2):
+							img0[y0+imgsize-j,x0+imgsize-i,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 3):
+							img0[y0+imgsize-j,x0+imgsize-i,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 4):
+							img0[y0+imgsize-j,x0+imgsize-i,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 5):
+							img0[y0+imgsize-j,x0+imgsize-i,:] = INT2Color(int(strdat[Order[ct]]))
+					ct += 1
+
+#		SOUTHSOUTHWEST
+		elif( (lonat-lon)%360 <= 213.75 and (lonat-lon)%360 > 191.25 ):
+			for i in range(imgsize):
+				for j in range(imgsize):
+					I = int(float(OR225[Order[imgsize*i+j]])/imgsize)
+					J = int(OR225[Order[imgsize*i+j]])%imgsize
+					if((res == 0 or res == 1 or res == 2 or res == 3 or res == 4 or res == 5) and (skel[I,J,0] != skel[0,0,0]) and (x0+imgsize-I) > 0 and (x0+imgsize-I) < XSize[res] and (y0+imgsize-J) > 0 and (y0+imgsize-J) < YSize[res]):
+						if(res == 0):
+							img0[y0+j+1,x0+i+1,:] = INT2Color(int(Textures))
+						if(res == 1):
+							img0[y0+imgsize-j,x0+imgsize-i,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 2):
+							img0[y0+imgsize-J,x0+imgsize-I,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 3):
+							img0[y0+imgsize-J,x0+imgsize-I,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 4):
+							img0[y0+imgsize-J,x0+imgsize-I,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 5):
+							img0[y0+imgsize-J,x0+imgsize-I,:] = INT2Color(int(strdat[Order[ct]]))#INT2Color(int(strdat[int(OR45[Order[ct]])]))
+					ct += 1
+#		SOUTHWEST
+		elif( (lonat-lon)%360 <= 236.25 and (lonat-lon)%360 > 213.75 ):
+			for i in range(imgsize):
+				for j in range(imgsize):
+					I = int(float(OR45[Order[imgsize*i+j]])/imgsize)
+					J = int(OR45[Order[imgsize*i+j]])%imgsize
+					if((res == 0 or res == 1 or res == 2 or res == 3 or res == 4 or res == 5) and (skel[I,J,0] != skel[0,0,0]) and (x0+imgsize-I) > 0 and (x0+imgsize-I) < XSize[res] and (y0+imgsize-J) > 0 and (y0+imgsize-J) < YSize[res]):
+						if(res == 0):
+							img0[y0+j+1,x0+i+1,:] = INT2Color(int(Textures))
+						if(res == 1):
+							img0[y0+imgsize-j,x0+imgsize-i,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 2):
+							img0[y0+imgsize-J,x0+imgsize-I,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 3):
+							img0[y0+imgsize-J,x0+imgsize-I,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 4):
+							img0[y0+imgsize-J,x0+imgsize-I,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 5):
+							img0[y0+imgsize-J,x0+imgsize-I,:] = INT2Color(int(strdat[Order[ct]]))#INT2Color(int(strdat[int(OR45[Order[ct]])]))
+					ct += 1
+#		WESTSOUTHWEST
+		elif( (lonat-lon)%360 <= 258.75 and (lonat-lon)%360 > 236.25 ):
+			for i in range(imgsize):
+				for j in range(imgsize):
+					if((res == 0 or res == 1 or res == 2 or res == 3 or res == 4 or res == 5) and (skel[i,j,0] != skel[0,0,0]) and (x0+j+1) > 0 and (x0+j+1) < XSize[res] and (y0+imgsize-i) > 0 and (y0+imgsize-i) < YSize[res]):
+						if(res == 0):
+							img0[y0+j+1,x0+i+1,:] = INT2Color(int(Textures))
+						if(res == 1):
+							img0[y0+imgsize-i,x0+j+1,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 2):
+							img0[y0+imgsize-i,x0+j+1,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 3):
+							img0[y0+imgsize-i,x0+j+1,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 4):
+							img0[y0+imgsize-i,x0+j+1,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 5):
+							img0[y0+imgsize-i,x0+j+1,:] = INT2Color(int(strdat[int(OR225[Order[ct]])]))
+					ct += 1
+#		WEST
+		elif( (lonat-lon)%360 <= 281.25 and (lonat-lon)%360 > 258.75 ):
+			for i in range(imgsize):
+				for j in range(imgsize):
+					if((res == 0 or res == 1 or res == 2 or res == 3 or res == 4 or res == 5) and (skel[i,j,0] != skel[0,0,0]) and (x0+j+1) > 0 and (x0+j+1) < XSize[res] and (y0+imgsize-i) > 0 and (y0+imgsize-i) < YSize[res]):
+						if(res == 0):
+							img0[y0+j+1,x0+i+1,:] = INT2Color(int(Textures))
+						if(res == 1):
+							img0[y0+imgsize-i,x0+j+1,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 2):
+							img0[y0+imgsize-i,x0+j+1,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 3):
+							img0[y0+imgsize-i,x0+j+1,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 4):
+							img0[y0+imgsize-i,x0+j+1,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 5):
+							img0[y0+imgsize-i,x0+j+1,:] = INT2Color(int(strdat[Order[ct]]))
+					ct += 1
+
+#		WESTNORTHWEST
+		elif( (lonat-lon)%360 <= 303.75 and (lonat-lon)%360 > 281.25 ):
+			for i in range(imgsize):
+				for j in range(imgsize):
+					I = int(float(OR225[Order[imgsize*i+j]])/imgsize)
+					J = int(OR225[Order[imgsize*i+j]])%imgsize
+					if((res == 0 or res == 1 or res == 2 or res == 3 or res == 4 or res == 5) and (skel[I,J,0] != skel[0,0,0]) and (x0+J+1) > 0 and (x0+J+1) < XSize[res] and (y0+imgsize-I) > 0 and (y0+imgsize-I) < YSize[res]):
+						if(res == 0):
+							img0[y0+j+1,x0+i+1,:] = INT2Color(int(Textures))
+						if(res == 1):
+							img0[y0+imgsize-i,x0+j+1,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 2):
+							img0[y0+imgsize-I,x0+J+1,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 3):
+							img0[y0+imgsize-I,x0+J+1,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 4):
+							img0[y0+imgsize-I,x0+J+1,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 5):
+							img0[y0+imgsize-I,x0+J+1,:] = INT2Color(int(strdat[Order[ct]]))#INT2Color(int(strdat[int(OR45[Order[ct]])]))
+					ct += 1
+
+#		NORTHWEST
+		elif( (lonat-lon)%360 <= 326.25 and (lonat-lon)%360 > 303.75 ):
+			for i in range(imgsize):
+				for j in range(imgsize):
+					I = int(float(OR45[Order[imgsize*i+j]])/imgsize)
+					J = int(OR45[Order[imgsize*i+j]])%imgsize
+					if((res == 0 or res == 1 or res == 2 or res == 3 or res == 4 or res == 5) and (skel[I,J,0] != skel[0,0,0]) and (x0+J+1) > 0 and (x0+J+1) < XSize[res] and (y0+imgsize-I) > 0 and (y0+imgsize-I) < YSize[res]):
+						if(res == 0):
+							img0[y0+j+1,x0+i+1,:] = INT2Color(int(Textures))
+						if(res == 1):
+							img0[y0+imgsize-i,x0+j+1,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 2):
+							img0[y0+imgsize-I,x0+J+1,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 3):
+							img0[y0+imgsize-I,x0+J+1,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 4):
+							img0[y0+imgsize-I,x0+J+1,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 5):
+							img0[y0+imgsize-I,x0+J+1,:] = INT2Color(int(strdat[Order[ct]]))#INT2Color(int(strdat[int(OR45[Order[ct]])]))
+					ct += 1
+
+#		NORTHNORTHWEST
+		else:
+			for i in range(imgsize):
+				for j in range(imgsize):
+					if((res == 0 or res == 1 or res == 2 or res == 3 or res == 4 or res == 5) and (skel[i,j,0] != skel[0,0,0]) and (x0+i+1) > 0 and (x0+i+1) < XSize[res] and (y0+j+1) > 0 and (y0+j+1) < YSize[res]):
+						if(res == 0):
+							img0[y0+j+1,x0+i+1,:] = INT2Color(int(Textures))
+						if(res == 1):
+							img0[y0+j+1,x0+i+1,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 2):
+							img0[y0+j+1,x0+i+1,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 3):
+							img0[y0+j+1,x0+i+1,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 4):
+							img0[y0+j+1,x0+i+1,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 5):
+							img0[y0+j+1,x0+i+1,:] = INT2Color(int(strdat[int(OR225[Order[ct]])]))
+
+					ct += 1
+	elif(lat > 10):
+#		NORTH
+		if( (lonat-lon)%360 <= 22.5 or (lonat-lon)%360 > 337.5 ):
+			for i in range(imgsize):
+				for j in range(imgsize):
+					if((res == 0 or res == 1 or res == 2 or res == 3 or res == 4 or res == 5) and (skel[i,j,0] != skel[0,0,0]) and (x0+i+1) > 0 and (x0+i+1) < XSize[res] and (y0+j+1) > 0 and (y0+j+1) < YSize[res]):
+						if(res == 0):
+							img0[y0+j+1,x0+i+1,:] = INT2Color(int(Textures))
+						if(res == 1):
+							img0[y0+j+1,x0+i+1,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 2):
+							img0[y0+j+1,x0+i+1,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 3):
+							img0[y0+j+1,x0+i+1,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 4):
+							img0[y0+j+1,x0+i+1,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 5):
+							img0[y0+j+1,x0+i+1,:] = INT2Color(int(strdat[Order[ct]]))
+					ct += 1
+#		NORTHEAST
+		elif( (lonat-lon)%360 <= 67.5 or (lonat-lon)%360 > 22.5 ):
+			for i in range(imgsize):
+				for j in range(imgsize):
+					I = int(float(OR45[Order[imgsize*i+j]])/imgsize)
+					J = int(OR45[Order[imgsize*i+j]])%imgsize
+					if((res == 0 or res == 1 or res == 2 or res == 3 or res == 4 or res == 5) and (skel[I,J,0] != skel[0,0,0]) and (x0+I+1) > 0 and (x0+I+1) < XSize[res] and (y0+J+1) > 0 and (y0+J+1) < YSize[res]):
+						if(res == 0):
+							img0[y0+j+1,x0+i+1,:] = INT2Color(int(Textures))
+						if(res == 1):
+							img0[y0+j+1,x0+i+1,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 2):
+							img0[y0+j+1,x0+i+1,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 3):
+							img0[y0+j+1,x0+i+1,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 4):
+							img0[y0+j+1,x0+i+1,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 5):
+							img0[y0+J+1,x0+I+1,:] = INT2Color(int(strdat[Order[ct]]))#INT2Color(int(strdat[int(OR45[Order[ct]])]))
+	
+					ct += 1
+#		EAST
+		elif( (lonat-lon)%360 <= 112.5 and (lonat-lon)%360 > 67.5 ):
+			for i in range(imgsize):
+				for j in range(imgsize):
+					if((res == 0 or res == 1 or res == 2 or res == 3 or res == 4 or res == 5) and (skel[i,j,0] != skel[0,0,0]) and (x0+j+1) > 0 and (x0+j+1) < XSize[res] and (y0+imgsize-i) > 0 and (y0+imgsize-i) < YSize[res]):
+						if(res == 0):
+							img0[y0+j+1,x0+i+1,:] = INT2Color(int(Textures))
+						if(res == 1):
+							img0[y0+imgsize-i,x0+j+1,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 2):
+							img0[y0+imgsize-i,x0+j+1,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 3):
+							img0[y0+imgsize-i,x0+j+1,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 4):
+							img0[y0+imgsize-i,x0+j+1,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 5):
+							img0[y0+imgsize-i,x0+j+1,:] = INT2Color(int(strdat[Order[ct]]))
+					ct += 1
+
+#		SOUTHEAST
+		elif( (lonat-lon)%360 <= 157.5 and (lonat-lon)%360 > 112.5 ):
+			for i in range(imgsize):
+				for j in range(imgsize):
+					I = int(float(OR45[Order[imgsize*i+j]])/imgsize)
+					J = int(OR45[Order[imgsize*i+j]])%imgsize
+					if((res == 0 or res == 1 or res == 2 or res == 3 or res == 4 or res == 5) and (skel[I,J,0] != skel[0,0,0]) and (x0+J+1) > 0 and (x0+J+1) < XSize[res] and (y0+imgsize-I) > 0 and (y0+imgsize-I) < YSize[res]):
+						if(res == 0):
+							img0[y0+j+1,x0+i+1,:] = INT2Color(int(Textures))
+						if(res == 1):
+							img0[y0+imgsize-i,x0+j+1,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 2):
+							img0[y0+imgsize-i,x0+j+1,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 3):
+							img0[y0+imgsize-i,x0+j+1,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 4):
+							img0[y0+imgsize-i,x0+j+1,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 5):
+							img0[y0+imgsize-I,x0+K+1,:] = INT2Color(int(strdat[Order[ct]]))#INT2Color(int(strdat[int(OR45[Order[ct]])]))
+					ct += 1
+#		SOUTH	
+		elif( (lonat-lon)%360 <= 202.5 and (lonat-lon)%360 > 157.5 ):
+			for i in range(imgsize):
+				for j in range(imgsize):
+					if((res == 0 or res == 1 or res == 2 or res == 3 or res == 4 or res == 5) and (skel[i,j,0] != skel[0,0,0]) and (x0+imgsize-i) > 0 and (x0+imgsize-i) < XSize[res] and (y0+imgsize-j) > 0 and (y0+imgsize-j) < YSize[res]):
+						if(res == 0):
+							img0[y0+j+1,x0+i+1,:] = INT2Color(int(Textures))
+						if(res == 1):
+							img0[y0+imgsize-j,x0+imgsize-i,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 2):
+							img0[y0+imgsize-j,x0+imgsize-i,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 3):
+							img0[y0+imgsize-j,x0+imgsize-i,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 4):
+							img0[y0+imgsize-j,x0+imgsize-i,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 5):
+							img0[y0+imgsize-j,x0+imgsize-i,:] = INT2Color(int(strdat[Order[ct]]))
+					ct += 1
+#		SOUTHWEST	
+		elif( (lonat-lon)%360 <= 247.5 and (lonat-lon)%360 > 202.5 ):
+			for i in range(imgsize):
+				for j in range(imgsize):
+					I = int(float(OR45[Order[imgsize*i+j]])/imgsize)
+					J = int(OR45[Order[imgsize*i+j]])%imgsize
+					if((res == 0 or res == 1 or res == 2 or res == 3 or res == 4 or res == 5) and (skel[I,K,0] != skel[0,0,0]) and (x0+imgsize-I) > 0 and (x0+imgsize-I) < XSize[res] and (y0+imgsize-K) > 0 and (y0+imgsize-J) < YSize[res]):
+						if(res == 0):
+							img0[y0+j+1,x0+i+1,:] = INT2Color(int(Textures))
+						if(res == 1):
+							img0[y0+imgsize-j,x0+imgsize-i,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 2):
+							img0[y0+imgsize-j,x0+imgsize-i,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 3):
+							img0[y0+imgsize-j,x0+imgsize-i,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 4):
+							img0[y0+imgsize-j,x0+imgsize-i,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 5):
+							img0[y0+imgsize-J,x0+imgsize-I,:] = INT2Color(int(strdat[Order[ct]]))#INT2Color(int(strdat[int(OR45[Order[ct]])]))
+					ct += 1
+#		WEST
+		elif( (lonat-lon)%360 <= 292.5 and (lonat-lon)%360 > 247.5 ):
+			for i in range(imgsize):
+				for j in range(imgsize):
+					if((res == 0 or res == 1 or res == 2 or res == 3 or res == 4 or res == 5) and (skel[i,j,0] != skel[0,0,0]) and (x0+imgsize-j) >= 0 and (x0+imgsize-j) < XSize[res] and (y0+i+1) > 0 and (y0+i+1) < YSize[res]):
+						if(res == 0):
+							img0[y0+j+1,x0+i+1,:] = INT2Color(int(Textures))
+						if(res == 1):
+							img0[y0+i+1,x0+imgsize-j,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 2):
+							img0[y0+i+1,x0+imgsize-j,:] = INT2Color(int(strdat[Order[ct]]))			
+						if(res == 3):
+							img0[y0+i+1,x0+imgsize-j,:] = INT2Color(int(strdat[Order[ct]]))	
+						if(res == 4):
+							img0[y0+i+1,x0+imgsize-j,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 5):
+							img0[y0+i+1,x0+imgsize-j,:] = INT2Color(int(strdat[Order[ct]]))
+					ct += 1	
+
+#		NORTHWEST
+		else:
+			for i in range(imgsize):
+				for j in range(imgsize):
+					I = int(float(OR45[Order[imgsize*i+j]])/imgsize)
+					J = int(OR45[Order[imgsize*i+j]])%imgsize
+					if((res == 0 or res == 1 or res == 2 or res == 3 or res == 4 or res == 5) and (skel[I,J,0] != skel[0,0,0]) and (x0+imgsize-J) >= 0 and (x0+imgsize-J) < XSize[res] and (y0+I+1) > 0 and (y0+I+1) < YSize[res]):
+						if(res == 0):
+							img0[y0+j+1,x0+i+1,:] = INT2Color(int(Textures))
+						if(res == 1):
+							img0[y0+i+1,x0+imgsize-j,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 2):
+							img0[y0+i+1,x0+imgsize-j,:] = INT2Color(int(strdat[Order[ct]]))			
+						if(res == 3):
+							img0[y0+i+1,x0+imgsize-j,:] = INT2Color(int(strdat[Order[ct]]))	
+						if(res == 4):
+							img0[y0+i+1,x0+imgsize-j,:] = INT2Color(int(strdat[Order[ct]]))
+						if(res == 5):
+							img0[y0+I+1,x0+imgsize-J,:] = INT2Color(int(strdat[Order[ct]]))*INT2Color(int(strdat[int(OR45[Order[ct]])]))
+					ct += 1		
+		
+	
 						
 	return img0
 
@@ -3189,6 +4064,22 @@ def AssignID(pid,x1,y1,img0,skel,res):
 		imgsize = 2**res
 	x0 = int((x1)*(imgsize+1))+int(XSize[res]/2)#-int(imgsize/2.0)
 	y0 = int((y1)*(imgsize+1))+int(YSize[res]/2)#-int(imgsize/2.0)
+
+	for i in range(imgsize):
+		for j in range(imgsize):
+			if((res == 0 or res == 1 or skel[i,j,0] != skel[0,0,0]) and (x0+i+1) > 0 and (x0+i+1) < XSize[res] and (y0+j+1) > 0 and (y0+j+1) < YSize[res]):
+				img0[y0+j+1,x0+i+1,:] = INT2Color(pid)
+	return img0
+
+def AssignID2(pid,x1,y1,img0,skel,res):
+	if(res == 6):
+		skel = plt.imread('imgcirc/skel52.png')
+	imgsize = 360
+	if(res >= 0):
+		imgsize = 2**res
+		imgsize = int(imgsize*13/16)
+	x0 = int((x1)*(imgsize*16/13+1))+int(XSize[res]/2)#-int(imgsize/2.0)
+	y0 = int((y1)*(imgsize*16/13+1))+int(YSize[res]/2)#-int(imgsize/2.0)
 
 	for i in range(imgsize):
 		for j in range(imgsize):
