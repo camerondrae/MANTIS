@@ -11,6 +11,7 @@ import Province
 import math
 import qb
 import random
+import Faction
 
 PList = Province.getProvinceList()
 
@@ -35,6 +36,24 @@ cr2 = np.zeros(shape=(YF,XF),dtype=int)
 COL4 = np.zeros(shape=(YF,XF),dtype=np.float16)
 COL5 = np.ones(shape=(YF,XF,4),dtype=np.float16)
 HGTS = plt.imread('TISDat/Z_HGT.png')
+Ys = np.zeros(shape=(YF,XF),dtype=int)
+Xs = np.zeros(shape=(YF,XF),dtype=int)
+Y2 = np.zeros(shape=(int(YF/2),int(XF/2)),dtype=int)
+X2 = np.zeros(shape=(int(YF/2),int(XF/2)),dtype=int)
+for i in range(YF):
+	Ys[i,:] = i
+	Xs[:,i] = i
+	if(i < int(YF/2)):
+		Y2[i,:] = 2*i
+		X2[:,i] = 2*i
+
+CHARS = []
+SETTS = []
+for F in Faction.getFactionList():
+	for c in F.GetCharacters():
+		CHARS.append(c)
+	for s in F.GetSettlements():
+		SETTS.append(s)
 
 ALPHABET = ['A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z']
 alphabet = ['a','b','c','d','e','f','g','h','i','j','k','l','m','n','o','p','q','r','s','t','u','v','w','x','y','z']
@@ -65,9 +84,12 @@ A = plt.imread('Assets/Zoom0/Plane0x0.png')
 plt.imsave(fname='tmp.png',arr=A)
 C = np.ones(shape=A.shape,dtype=np.float16)
 C[:,:,0:3] = 0.0
-D0 = Builder.SelectValue(A,C)
+D0 = qb.SelectValueC(qb.CA2I(A),0)
+#E0 = np.zeros(shape=(1920,1920),dtype=np.uint8)
+#E0[:,:] = (1-qb.SelectValue2(qb.CA2I(plt.imread('Assets/Zoom0/Plane0x0.png')),0))
+#print(np.sum(E0))
 A = plt.imread('Assets/Zoom1/Plane0x0.png')
-D1 = Builder.SelectValue(A,C)
+D1 = qb.SelectValueC(qb.CA2I(A),0)
 D = np.ones(shape=A.shape,dtype=np.uint8)
 D[:,:,:] = D0[:,:,:]
 E0 = (1-D0)
@@ -75,6 +97,8 @@ E0[:,:,3] = 1.0
 
 E1 = (1-D1)
 E1[:,:,3] = 1.0
+E2 = np.zeros(shape=(1920,1920),dtype=np.uint8)
+
 
 class MainWindow(QMainWindow):
 
@@ -86,6 +110,8 @@ class MainWindow(QMainWindow):
 		self.VDisp = True
 		self.FDisp = False
 		self.RDisp = False	
+		self.ODisp = False
+		self.Place = 'Assets'
 		self.GeodesicSetReady = False
 
 		self.fldmap = np.loadtxt('Field.txt',dtype=np.float32)
@@ -105,7 +131,7 @@ class MainWindow(QMainWindow):
 #		self.plane = list(open('Planes/TanXY'+str(self.lat)+'x'+str(self.lon)+'.txt'))
 		self.zmlvl = [0,1,2,4,8,16,32,64,128,256]
 #		self.jplvl = [15,15,15,7.5,3.75,1.875,0.9375]*self.scale
-		self.jplvl = [150000,150000,150000,75000,37500,18750,9375]
+		self.jplvl = [150000,150000,150000,75000,37500,18750,18750,9375]
 		self.selected = 88
 		self.selectedProvince = 0
 		self.lastselected = 88
@@ -113,6 +139,7 @@ class MainWindow(QMainWindow):
 		self.isPole = 74
 		self.lastPole = 74
 		self.nearbyplane = 88
+
 
 #		Time Information
 
@@ -125,12 +152,14 @@ class MainWindow(QMainWindow):
 		self.HUDD = False
 		self.BLDD = False
 		self.GRID = False
+		self.TOPD = False
 
 		self.year = 1980
 		self.month = 0
 		self.day = 0
 		self.hour = 18
 		self.img = plt.imread('Assets/Zoom'+str(self.zoom)+'/Plane'+str(self.lat)+'x'+str(self.lon)+'.png')
+		self.hgt = plt.imread('HGT/Zoom2/Plane'+str(self.lat)+'x'+str(self.lon)+'.png')
 		self.img00 = plt.imread('Assets/Zoom'+str(self.zoom)+'/Plane'+str(self.lat)+'x'+str(self.lon)+'.png')
 		self.img0 = plt.imread('IMG/Zoom'+str(self.zoom)+'/Plane'+str(self.lat)+'x'+str(self.lon)+'.png')
 		self.angle = 0
@@ -173,6 +202,8 @@ class MainWindow(QMainWindow):
 
 		editCell = editMenu.addMenu('Edit Cell')
 		editPRVM = editMenu.addMenu('Edit Province')
+		editFLDV = editMenu.addMenu('Edit Field View')
+		editDISP = editMenu.addMenu('Edit Display Field')
 
 #		Edit Cell
 
@@ -190,6 +221,9 @@ class MainWindow(QMainWindow):
 #		addEurope = addPRV.addMenu('Europe')
 		remPRV = editPRV.addMenu('Remove Province')
 		
+		self.field = np.load('PRV.npy')
+		self.fieldt = np.zeros(shape=(1474562),dtype=self.field.dtype)
+
 		Letter1 = []
 		Letter2 = []
 		for i in range(26):
@@ -199,19 +233,33 @@ class MainWindow(QMainWindow):
 				Letter2[i].append(Letter1[i].addMenu(ALPHABET[j]))
 
 
+
 #		for i in range(26):
 #			addPRV.addMenu(ALPHABET[i])
 				
 
+		Action1 = []
+		Setter1 = []
 		for i in range(len(Provinces)):
 			Name = Provinces[i].split(' ')
+#			PList[i].RefreshPRV()
+			Action1.append(QAction('Find '+str(Name[0]),self))
+			Setter1.append(0)
 			for j in range(26):
 				if(Name[0][0] == ALPHABET[j] or Name[0][0] == alphabet[j]):
 					for k in range(26):
 						if(Name[0][1] == ALPHABET[k] or Name[0][1] == alphabet[k]):
-							setPRV = QAction('Set to '+str(Name[0]),self)
-							setPRV.triggered.connect(lambda: self.SetPRV(i))
-							Letter2[j][k].addAction(setPRV)
+							Setter1[i] = Letter2[j][k].addMenu(str(Name[0]))
+							
+#							setPRV = QAction('Set '+str(Name[0]),self)
+#							findPRV = QAction('Find '+str(Name[0]),self)
+#							idxPRV = QAction(str(Name[0])+': '+str(i),self)
+#							setPRV.triggered.connect(lambda: self.FindPRV(i,str(Name[0])))
+							Action1[i].triggered.connect(lambda: self.FindPRV(i,str(Name[0])))
+#							idxPRV.triggered.connect(lambda: self.FindPRV(i,str(Name[0])))
+#							prvstat.addAction(setPRV)
+							Setter1[i].addAction(Action1[i])
+#							prvstat.addAction(idxPRV)
 
 #		For Setting IGBP
 
@@ -324,6 +372,51 @@ class MainWindow(QMainWindow):
 		editAddSettlement = editPRVM.addMenu('Add Settlement')
 		editRemSettlement = editPRVM.addMenu('Remove Settlement')
 		editTile = editPRVM.addMenu('Edit Tiles')
+
+#		Edit Field
+
+		editField = editFLDV.addMenu('Edit Field')
+
+		setFieldPRV = QAction('Provinces',self)
+		setFieldPRV.triggered.connect(lambda: self.ChangeField(np.load('PRV.npy')))
+		editField.addAction(setFieldPRV)
+		setFieldHGT = QAction('Heights Z',self)
+		setFieldHGT.triggered.connect(lambda: self.ChangeField(np.load('H0.npy')[:,0] ))
+		editField.addAction(setFieldHGT)
+		setFieldRGN = QAction('Roughness Z_sigma',self)
+		setFieldRGN.triggered.connect(lambda: self.ChangeField(np.load('V0.npy')[:,0] ))
+		editField.addAction(setFieldRGN)
+		setFieldVIS = QAction('Blue Marble Visuals',self)
+		setFieldVIS.triggered.connect(lambda: self.ChangeField(np.load('Z0.npy')))
+		editField.addAction(setFieldVIS)
+		setFieldRAW = QAction('Raw Visuals',self)
+		setFieldRAW.triggered.connect(lambda: self.ChangeField(np.array(list(range(1474562)))))
+		editField.addAction(setFieldRAW)
+
+		setFieldZEROS = QAction('Zeros',self)
+		setFieldZEROS.triggered.connect(lambda: self.ChangeField(np.zeros(shape=(1474562),dtype=int)))
+		editField.addAction(setFieldZEROS)
+
+#		Edit Display
+
+		setDispEarthBM = QAction('Earth (Blue Marble)',self)
+		setDispEarthBM.triggered.connect(lambda: self.OtherDisplay('Assets'))
+		editDISP.addAction(setDispEarthBM)
+
+		setDispMoon = QAction('Moon (Lunar)',self)
+		setDispMoon.triggered.connect(lambda: self.OtherDisplay('Lunar'))
+		editDISP.addAction(setDispMoon)
+
+		setDispMars = QAction('Mars',self)
+		setDispMars.triggered.connect(lambda: self.OtherDisplay('Mars'))
+		editDISP.addAction(setDispMars)
+
+		
+		
+
+		editColorBar = editFLDV.addMenu('Edit ColorBar')
+		editRange = editFLDV.addMenu('Edit Range')
+			
 		
 		
 	
@@ -423,8 +516,8 @@ class MainWindow(QMainWindow):
 		self.shortcut = QShortcut(QKeySequence("P"), self)
 		self.shortcut.activated.connect(self.GalacticDisplay)
 
-#		self.shortcut = QShortcut(QKeySequence("Y"), self)
-#		self.shortcut.activated.connect(self.SolarDisplay)
+		self.shortcut = QShortcut(QKeySequence("Y"), self)
+		self.shortcut.activated.connect(self.TopoDisplay)
 
 		self.shortcut = QShortcut(QKeySequence("F5"), self)
 		self.shortcut.activated.connect(self.Refresh)
@@ -457,8 +550,20 @@ class MainWindow(QMainWindow):
 		self.adjustSize()
 
 	def SetPRV(self,prv):
+#		print('Relocating ...')
 		Builder.SetPRV(self.selected,prv)
-		self.tobeedited.append(self.selected)
+		self.tobeedited.append(self.selectedProvince)
+
+	def FindPRV(self,prv,name):
+		self.lat = int(Builder.Grid[PList[prv].GetCapital()].getLatDeg()*10000/self.jplvl[self.zoom])*self.jplvl[self.zoom]
+		self.lon = int(Builder.Grid[PList[prv].GetCapital()].getLonDeg()*10000/self.jplvl[self.zoom])*self.jplvl[self.zoom]
+		print('For '+str(name))
+		print('Nearest Plane to Capital '+str(Provinces[prv])+' : '+str(self.lat)+' x '+str(self.lon))
+		self.StandardProcedure()
+#		Builder.SetPRV(self.selected,prv)
+#		self.tobeedited.append(self.selectedProvince)
+		
+		
 
 	def SetIGBP(self,igbp):
 		Builder.SetIGBP(self.selected,igbp)
@@ -944,7 +1049,382 @@ class MainWindow(QMainWindow):
 		self.resize(pixmap.size())
 		self.adjustSize()
 
+	def ChangeField(self,newfield):
+		if(np.average(newfield) == 0 and np.var(newfield) == 0):
+#			newfield[83] = 100
+#			outarr = np.zeros(shape=(1476225,3),dtype=float)
+#			numarr = np.zeros(shape=(1476225),dtype=int)
+			newarr = plt.imread('BigData/KoppenClimateData.png')
+			krnl = qb.CA2I(plt.imread('ToXY7.png'))
+#			outarr[krnl[:,:],0] += newarr[:,:,0]
+#			outarr[krnl[:,:],1] += newarr[:,:,1]
+#			outarr[krnl[:,:],2] += newarr[:,:,2]
+#			numarr[krnl[:,:]] = np.ones(shape=(2700,5400),dtype=int)
+			self.field[krnl[:,:]] = qb.CA2I(newarr[:,:])
+#			self.field[:] = outarr[:,0]/(0.01+numarr[:])*255*256*256+outarr[:,1]/(0.01+numarr[:])*255*256+outarr[:,2]/(0.01+numarr[:])*255
+		else:
+			self.field[0:1474562] = newfield[0:1474562]
+		self.StandardProcedure()
+
+	def SettlementView(self):
+		for c in SETTS:
+			cmask = qb.SelectValue2(qb.CA2I(self.img0),c.getPos())
+			colmask = qb.SelectValueC(qb.CA2I(self.img0),c.getPos())
+			denom = np.sum(cmask[:,:])
+			x0 = 0
+			y0 = 0
+			if(denom != 0):
+				x0 = int(np.sum(cmask[:,:]*Xs[:,:])/denom)
+				y0 = int(np.sum(cmask[:,:]*Ys[:,:])/denom)
+			cimg = c.getIMG(self.zoom)
+			self.img[y0-2**max(self.zoom-1,0):y0+2**max(self.zoom-1,0),x0-2**max(self.zoom-1,0):x0+2**max(self.zoom-1,0),:] = self.img[y0-2**max(self.zoom-1,0):y0+2**max(self.zoom-1,0),x0-2**max(self.zoom-1,0):x0+2**max(self.zoom-1,0),:]*qb.SelectValueC(qb.CA2I(cimg[0:2**max(self.zoom,1),0:2**max(self.zoom,1),:]),16777215)+cimg[0:2**max(self.zoom,1),0:2**max(self.zoom,1),:]*(1-qb.SelectValueC(qb.CA2I(cimg[0:2**max(self.zoom,1),0:2**max(self.zoom,1),:]),16777215))
+
+
+	def CharacterView(self):
+		for c in CHARS:
+			cmask = qb.SelectValue2(qb.CA2I(self.img0),c.getPos())
+			colmask = qb.SelectValueC(qb.CA2I(self.img0),c.getPos())
+			denom = np.sum(cmask[:,:])
+			x0 = 0
+			y0 = 0
+			if(denom != 0):
+				x0 = int(np.sum(cmask[:,:]*Xs[:,:])/denom)
+				y0 = int(np.sum(cmask[:,:]*Ys[:,:])/denom)
+			cimg = c.getIMG(self.zoom)
+			self.img[y0-2**max(self.zoom-1,0):y0+2**max(self.zoom-1,0),x0-2**max(self.zoom-1,0):x0+2**max(self.zoom-1,0),:] = self.img[y0-2**max(self.zoom-1,0):y0+2**max(self.zoom-1,0),x0-2**max(self.zoom-1,0):x0+2**max(self.zoom-1,0),:]*qb.SelectValueC(qb.CA2I(cimg[0:2**max(self.zoom,1),0:2**max(self.zoom,1),:]),16777215)+cimg[0:2**max(self.zoom,1),0:2**max(self.zoom,1),:]*(1-qb.SelectValueC(qb.CA2I(cimg[0:2**max(self.zoom,1),0:2**max(self.zoom,1),:]),16777215))
+			
+
+
+	def Colorbar(self,field):
+		outarr = np.zeros(shape=field.shape,dtype=int)
+		outarr[:,:] = field
+#		outarr[:,:] = outarr[:,:]*qb.SelectValuesLT(outarr[:,:],16777215)
+#		outarr[:,:] = outarr[:,:]*qb.SelectValuesGT(outarr[:,:],0)
+		return qb.INTS2Color(outarr)	
+
+
+	def Colorbar0(self,field):
+		outarr = np.zeros(shape=field.shape,dtype=float)
+		
+#		outarr[:,:] = 16*(field-np.average(field))/np.sqrt(1+np.var(field))
+		outarr[:,:] = (field-np.min(field))/(np.max(field)-np.min(field))
+		realoutarr = np.ones(shape=(field.shape[0],field.shape[1],4),dtype=np.float16)
+		realoutarr[:,:,0] = 1-outarr[:,:]/2
+		realoutarr[:,:,1] = 1-outarr[:,:]
+		realoutarr[:,:,2] = 1-outarr[:,:]
+#		return qb.INTS2Color(2*outarr)	
+		return realoutarr
 	def StandardProcedure(self):
+		Place = ''
+
+		if(self.ODisp == True):
+			Place = self.Place
+			if(self.zoom < 6):
+				self.img = plt.imread(Place+'/Zoom'+str(self.zoom)+'/Plane'+str(self.lat)+'x'+str(self.lon)+'.png')
+				self.img0 = plt.imread('IMG/Zoom'+str(self.zoom)+'/Plane'+str(self.lat)+'x'+str(self.lon)+'.png')
+
+		if(self.VDisp == True):
+			Place = 'Assets'
+			if(self.zoom < 6):
+				self.img = plt.imread(Place+'/Zoom'+str(self.zoom)+'/Plane'+str(self.lat)+'x'+str(self.lon)+'.png')
+				self.img0 = plt.imread('IMG/Zoom'+str(self.zoom)+'/Plane'+str(self.lat)+'x'+str(self.lon)+'.png')
+
+		if(self.FDisp == True):
+			Place = 'HGT'
+			self.orientation = 'N'
+			if(self.zoom >= 0):
+				self.img0 = plt.imread('IMG/Zoom'+str(self.zoom)+'/Plane'+str(self.lat)+'x'+str(self.lon)+'.png')
+				self.img = self.Colorbar(self.field[qb.CA2I(self.img0[:,:])])
+				plt.imsave(fname='tmp.png',arr=self.img[int(self.img.shape[0]/2)-540:int(self.img.shape[0]/2)+540,:])
+				pixmap = QPixmap('tmp.png')	
+				self.label.setPixmap(pixmap)
+				self.resize(pixmap.size())
+				self.adjustSize()	
+				return
+			else:
+				self.img = plt.imread('Assets/Zoom'+str(self.zoom)+'/Plane'+str(self.lat)+'x'+str(self.lon)+'.png')
+				self.img0 = plt.imread('IMG/Zoom'+str(self.zoom)+'/Plane'+str(self.lat)+'x'+str(self.lon)+'.png')
+#				plt.imsave(fname='tmp.png',arr=self.img[int(self.img.shape[0]/2)-540:int(self.img.shape[0]/2)+540,:])
+#				pixmap = QPixmap('tmp.png')	
+#				self.label.setPixmap(pixmap)
+#				self.resize(pixmap.size())
+#				self.adjustSize()	
+#				return
+		if(self.RDisp == True):
+			Place = 'IMG'
+			self.img = plt.imread(Place+'/Zoom'+str(self.zoom)+'/Plane'+str(self.lat)+'x'+str(self.lon)+'.png')
+			self.img0 = plt.imread('IMG/Zoom'+str(self.zoom)+'/Plane'+str(self.lat)+'x'+str(self.lon)+'.png')
+
+#			self.orientation = 'N'
+#			if(self.zoom >= 0):
+#				self.img0 = plt.imread('IMG/Zoom'+str(self.zoom)+'/Plane'+str(self.lat)+'x'+str(self.lon)+'.png')
+#				self.img = self.Colorbar(self.field[qb.CA2I(self.img0[:,:])])
+#				plt.imsave(fname='tmp.png',arr=self.img[int(self.img.shape[0]/2)-540:int(self.img.shape[0]/2)+540,:])
+#				pixmap = QPixmap('tmp.png')	
+#				self.label.setPixmap(pixmap)
+#				self.resize(pixmap.size())
+#				self.adjustSize()	
+#				return
+
+		if(self.zoom == 6):
+			lat5 = int(self.lat/self.jplvl[self.zoom-1])*self.jplvl[self.zoom-1]
+			lon5 = int(self.lon/self.jplvl[self.zoom-1])*self.jplvl[self.zoom-1]
+			if(True):
+				if(True):
+					centerimg = plt.imread(Place+'/Zoom5/Plane'+str(lat5)+'x'+str(lon5)+'.png')[int(YF/4):int(3*YF/4),int(XF/4):int(3*XF/4)]
+					centerimg0 = plt.imread('IMG/Zoom5/Plane'+str(lat5)+'x'+str(lon5)+'.png')[int(YF/4):int(3*YF/4),int(XF/4):int(3*XF/4)]
+					self.img[Y2[:,:],X2[:,:]] = centerimg[:,:]
+					self.img0[Y2[:,:],X2[:,:]] = centerimg0[:,:]
+					self.img[Y2[:,:]+1,X2[:,:]] = centerimg[:,:]
+					self.img0[Y2[:,:]+1,X2[:,:]] = centerimg0[:,:]
+					self.img[Y2[:,:],X2[:,:]+1] = centerimg[:,:]
+					self.img0[Y2[:,:],X2[:,:]+1] = centerimg0[:,:]
+					self.img[Y2[:,:]+1,X2[:,:]+1] = centerimg[:,:]
+					self.img0[Y2[:,:]+1,X2[:,:]+1] = centerimg0[:,:]
+#				else:
+#					leftimg = plt.imread(Place+'/Zoom5/Plane'+str(lat5)+'x'+str(lon5)+'.png')[int(YF/4):int(3*YF/4),int(3*XF/4):XF]
+#					leftimg0 = plt.imread('IMG/Zoom5/Plane'+str(lat5)+'x'+str(lon5)+'.png')[int(YF/4):int(3*YF/4),int(3*XF/4):XF]
+#					rightimg = plt.imread(Place+'/Zoom5/Plane'+str(lat5)+'x'+str(lon5+self.jplvl[5])+'.png')[int(YF/4):int(3*YF/4),0:int(1*XF/4)]
+#					rightimg0 = plt.imread('IMG/Zoom5/Plane'+str(lat5)+'x'+str(lon5+self.jplvl[5])+'.png')[int(YF/4):int(3*YF/4),0:int(1*XF/4)]
+#
+#
+#					self.img[Y2[:,0:480],X2[:,0:480]] = leftimg[:,:]
+#					self.img0[Y2[:,0:480],X2[:,0:480]] = leftimg0[:,:]	
+#					self.img[Y2[:,0:480],X2[:,0:480]+1] = leftimg[:,:]
+#					self.img0[Y2[:,0:480],X2[:,0:480]+1] = leftimg0[:,:]	
+#					self.img[Y2[:,0:480]+1,X2[:,0:480]] = leftimg[:,:]
+#					self.img0[Y2[:,0:480]+1,X2[:,0:480]] = leftimg0[:,:]	
+#					self.img[Y2[:,0:480]+1,X2[:,0:480]+1] = leftimg[:,:]
+#					self.img0[Y2[:,0:480]+1,X2[:,0:480]+1] = leftimg0[:,:]	
+#
+#					self.img[Y2[:,480:960],X2[:,480:960]] = rightimg[:,:]
+#					self.img0[Y2[:,480:960],X2[:,480:960]] = rightimg0[:,:]
+#					self.img[Y2[:,480:960],X2[:,480:960]+1] = rightimg[:,:]
+#					self.img0[Y2[:,480:960],X2[:,480:960]+1] = rightimg0[:,:]
+#					self.img[Y2[:,480:960]+1,X2[:,480:960]] = rightimg[:,:]
+#					self.img0[Y2[:,480:960]+1,X2[:,480:960]] = rightimg0[:,:]
+#					self.img[Y2[:,480:960]+1,X2[:,480:960]+1] = rightimg[:,:]
+#					self.img0[Y2[:,480:960]+1,X2[:,480:960]+1] = rightimg0[:,:]
+#			elif(self.latdeg != 90):
+#				if(self.lon == lon5):
+#					bottomimg = plt.imread(Place+'/Zoom5/Plane'+str(lat5)+'x'+str(lon5)+'.png')[0:int(1*YF/4),int(1*XF/4):int(3*XF/4)]
+#					bottomimg0 = plt.imread('IMG/Zoom5/Plane'+str(lat5)+'x'+str(lon5)+'.png')[0:int(1*YF/4),int(1*XF/4):int(3*XF/4)]
+#					topimg = plt.imread(Place+'/Zoom5/Plane'+str(lat5+self.jplvl[5])+'x'+str(lon5)+'.png')[int(3*YF/4):YF,int(1*XF/4):int(3*XF/4)]
+#					topimg0 = plt.imread('IMG/Zoom5/Plane'+str(lat5+self.jplvl[5])+'x'+str(lon5)+'.png')[int(3*YF/4):YF,int(1*XF/4):int(3*XF/4)]
+#
+#
+#					self.img[Y2[0:480,:],X2[0:480,:]] = topimg[:,:]
+#					self.img0[Y2[0:480,:],X2[0:480,:]] = topimg0[:,:]
+#					self.img[Y2[0:480,:],X2[0:480,:]+1] = topimg[:,:]
+#					self.img0[Y2[0:480,:],X2[0:480,:]+1] = topimg0[:,:]
+#					self.img[Y2[0:480,:]+1,X2[0:480,:]] = topimg[:,:]
+#					self.img0[Y2[0:480,:]+1,X2[0:480,:]] = topimg0[:,:]
+#					self.img[Y2[0:480,:]+1,X2[0:480,:]+1] = topimg[:,:]
+#					self.img0[Y2[0:480,:]+1,X2[0:480,:]+1] = topimg0[:,:]
+#
+#					self.img[Y2[480:960,:],X2[480:960,:]] = bottomimg[:,:]
+#					self.img0[Y2[480:960,:],X2[480:960,:]] = bottomimg0[:,:]
+#					self.img[Y2[480:960,:],X2[480:960,:]+1] = bottomimg[:,:]
+#					self.img0[Y2[480:960,:],X2[480:960,:]+1] = bottomimg0[:,:]
+#					self.img[Y2[480:960,:]+1,X2[480:960,:]] = bottomimg[:,:]
+#					self.img0[Y2[480:960,:]+1,X2[480:960,:]] = bottomimg0[:,:]
+#					self.img[Y2[480:960,:]+1,X2[480:960,:]+1] = bottomimg[:,:]
+#					self.img0[Y2[480:960,:]+1,X2[480:960,:]+1] = bottomimg0[:,:]
+#				else:
+#					bottomleftimg = plt.imread(Place+'/Zoom5/Plane'+str(lat5)+'x'+str(lon5)+'.png')[0:int(1*YF/4),int(3*XF/4):XF]
+#					bottomleftimg0 = plt.imread('IMG/Zoom5/Plane'+str(lat5)+'x'+str(lon5)+'.png')[0:int(1*YF/4),int(3*XF/4):XF]
+#					bottomrightimg = plt.imread(Place+'/Zoom5/Plane'+str(lat5)+'x'+str(lon5+self.jplvl[5])+'.png')[0:int(1*YF/4),0:int(1*XF/4)]
+#					bottomrightimg0 = plt.imread('IMG/Zoom5/Plane'+str(lat5)+'x'+str(lon5+self.jplvl[5])+'.png')[0:int(1*YF/4),0:int(1*XF/4)]
+#					topleftimg = plt.imread(Place+'/Zoom5/Plane'+str(lat5)+'x'+str(lon5)+'.png')[int(3*YF/4):YF,int(3*XF/4):XF]
+#					topleftimg0 = plt.imread('IMG/Zoom5/Plane'+str(lat5)+'x'+str(lon5)+'.png')[int(3*YF/4):YF,int(3*XF/4):XF]
+#					toprightimg = plt.imread(Place+'/Zoom5/Plane'+str(lat5)+'x'+str(lon5+self.jplvl[5])+'.png')[int(3*YF/4):YF,0:int(1*XF/4)]
+#					toprightimg0 = plt.imread('IMG/Zoom5/Plane'+str(lat5)+'x'+str(lon5+self.jplvl[5])+'.png')[int(3*YF/4):YF,0:int(1*XF/4)]
+#
+#
+#					self.img[Y2[0:480,0:480],X2[0:480,0:480]] = topleftimg[:,:]
+#					self.img0[Y2[0:480,0:480],X2[0:480,0:480]] = topleftimg0[:,:]
+#					self.img[Y2[0:480,0:480],X2[0:480,0:480]+1] = topleftimg[:,:]
+#					self.img0[Y2[0:480,0:480],X2[0:480,0:480]+1] = topleftimg0[:,:]
+#					self.img[Y2[0:480,0:480]+1,X2[0:480,0:480]] = topleftimg[:,:]
+#					self.img0[Y2[0:480,0:480]+1,X2[0:480,0:480]] = topleftimg0[:,:]
+#					self.img[Y2[0:480,0:480]+1,X2[0:480,0:480]+1] = topleftimg[:,:]
+#					self.img0[Y2[0:480,0:480]+1,X2[0:480,0:480]+1] = topleftimg0[:,:]
+#
+#					self.img[Y2[0:480,480:960],X2[0:480,480:960]] = toprightimg[:,:]
+#					self.img0[Y2[0:480,480:960],X2[0:480,480:960]] = toprightimg0[:,:]
+#					self.img[Y2[0:480,480:960],X2[0:480,480:960]+1] = toprightimg[:,:]
+#					self.img0[Y2[0:480,480:960],X2[0:480,480:960]+1] = toprightimg0[:,:]
+#					self.img[Y2[0:480,480:960]+1,X2[0:480,480:960]] = toprightimg[:,:]
+#					self.img0[Y2[0:480,480:960]+1,X2[0:480,480:960]] = toprightimg0[:,:]
+#					self.img[Y2[0:480,480:960]+1,X2[0:480,480:960]+1] = toprightimg[:,:]
+#					self.img0[Y2[0:480,480:960]+1,X2[0:480,480:960]+1] = toprightimg0[:,:]
+#
+#					self.img[Y2[480:960,0:480],X2[480:960,0:480]] = bottomleftimg[:,:]
+#					self.img0[Y2[480:960,0:480],X2[480:960,0:480]] = bottomleftimg0[:,:]
+#					self.img[Y2[480:960,0:480],X2[480:960,0:480]+1] = bottomleftimg[:,:]
+#					self.img0[Y2[480:960,0:480],X2[480:960,0:480]+1] = bottomleftimg0[:,:]
+#					self.img[Y2[480:960,0:480]+1,X2[480:960,0:480]] = bottomleftimg[:,:]
+#					self.img0[Y2[480:960,0:480]+1,X2[480:960,0:480]] = bottomleftimg0[:,:]
+#					self.img[Y2[480:960,0:480]+1,X2[480:960,0:480]+1] = bottomleftimg[:,:]
+#					self.img0[Y2[480:960,0:480]+1,X2[480:960,0:480]+1] = bottomleftimg0[:,:]
+#
+#					self.img[Y2[480:960,480:960],X2[480:960,480:960]] = bottomrightimg[:,:]
+#					self.img0[Y2[480:960,480:960],X2[480:960,480:960]] = bottomrightimg0[:,:]
+#					self.img[Y2[480:960,480:960],X2[480:960,480:960]+1] = bottomrightimg[:,:]
+#					self.img0[Y2[480:960,480:960],X2[480:960,480:960]+1] = bottomrightimg0[:,:]
+#					self.img[Y2[480:960,480:960]+1,X2[480:960,480:960]] = bottomrightimg[:,:]
+#					self.img0[Y2[480:960,480:960]+1,X2[480:960,480:960]] = bottomrightimg0[:,:]
+#					self.img[Y2[480:960,480:960]+1,X2[480:960,480:960]+1] = bottomrightimg[:,:]
+#					self.img0[Y2[480:960,480:960]+1,X2[480:960,480:960]+1] = bottomrightimg0[:,:]
+#		
+#		
+#			
+		if(self.zoom >= 2 and self.zoom <= 5):
+			self.hgt = plt.imread('HGT/Zoom'+str(self.zoom)+'/Plane'+str(self.lat)+'x'+str(self.lon)+'.png')
+		if(self.zoom == 6):
+			lat5 = int(self.lat/self.jplvl[self.zoom-1])*self.jplvl[self.zoom-1]
+			lon5 = int(self.lon/self.jplvl[self.zoom-1])*self.jplvl[self.zoom-1]
+			if(True):
+				if(True):
+					centerimg0 = plt.imread('HGT/Zoom5/Plane'+str(lat5)+'x'+str(lon5)+'.png')[int(YF/4):int(3*YF/4),int(XF/4):int(3*XF/4)]
+					self.hgt[Y2[:,:],X2[:,:]] = centerimg0[:,:]
+					self.hgt[Y2[:,:]+1,X2[:,:]] = centerimg0[:,:]
+					self.hgt[Y2[:,:],X2[:,:]+1] = centerimg0[:,:]
+					self.hgt[Y2[:,:]+1,X2[:,:]+1] = centerimg0[:,:]
+#				else:
+#					leftimg0 = plt.imread('HGT/Zoom5/Plane'+str(lat5)+'x'+str(lon5)+'.png')[int(YF/4):int(3*YF/4),int(3*XF/4):XF]
+#					rightimg0 = plt.imread('HGT/Zoom5/Plane'+str(lat5)+'x'+str(lon5+self.jplvl[5])+'.png')[int(YF/4):int(3*YF/4),0:int(1*XF/4)]
+#
+#					self.hgt[Y2[:,0:480],X2[:,0:480]] = leftimg0[:,:]	
+#					self.hgt[Y2[:,0:480],X2[:,0:480]+1] = leftimg0[:,:]	
+#					self.hgt[Y2[:,0:480]+1,X2[:,0:480]] = leftimg0[:,:]	
+#					self.hgt[Y2[:,0:480]+1,X2[:,0:480]+1] = leftimg0[:,:]	
+#
+#					self.hgt[Y2[:,480:960],X2[:,480:960]] = rightimg0[:,:]
+#					self.hgt[Y2[:,480:960],X2[:,480:960]+1] = rightimg0[:,:]
+#					self.hgt[Y2[:,480:960]+1,X2[:,480:960]] = rightimg0[:,:]
+#					self.hgt[Y2[:,480:960]+1,X2[:,480:960]+1] = rightimg0[:,:]
+#			elif(self.latdeg != 90):
+#				if(self.lon == lon5):
+#					bottomimg0 = plt.imread('HGT/Zoom5/Plane'+str(lat5)+'x'+str(lon5)+'.png')[0:int(1*YF/4),int(1*XF/4):int(3*XF/4)]
+#					topimg0 = plt.imread('HGT/Zoom5/Plane'+str(lat5+self.jplvl[5])+'x'+str(lon5)+'.png')[int(3*YF/4):YF,int(1*XF/4):int(3*XF/4)]
+#
+#
+#					self.hgt[Y2[0:480,:],X2[0:480,:]] = topimg0[:,:]
+#					self.hgt[Y2[0:480,:],X2[0:480,:]+1] = topimg0[:,:]
+#					self.hgt[Y2[0:480,:]+1,X2[0:480,:]] = topimg0[:,:]
+#					self.hgt[Y2[0:480,:]+1,X2[0:480,:]+1] = topimg0[:,:]
+#
+#					self.hgt[Y2[480:960,:],X2[480:960,:]] = bottomimg0[:,:]
+#					self.hgt[Y2[480:960,:],X2[480:960,:]+1] = bottomimg0[:,:]
+#					self.hgt[Y2[480:960,:]+1,X2[480:960,:]] = bottomimg0[:,:]
+#					self.hgt[Y2[480:960,:]+1,X2[480:960,:]+1] = bottomimg0[:,:]
+#				else:
+#					bottomleftimg0 = plt.imread('HGT/Zoom5/Plane'+str(lat5)+'x'+str(lon5)+'.png')[0:int(1*YF/4),int(3*XF/4):XF]
+#					bottomrightimg0 = plt.imread('HGT/Zoom5/Plane'+str(lat5)+'x'+str(lon5+self.jplvl[5])+'.png')[0:int(1*YF/4),0:int(1*XF/4)]
+#					topleftimg0 = plt.imread('HGT/Zoom5/Plane'+str(lat5)+'x'+str(lon5)+'.png')[int(3*YF/4):YF,int(3*XF/4):XF]
+#					toprightimg0 = plt.imread('HGT/Zoom5/Plane'+str(lat5)+'x'+str(lon5+self.jplvl[5])+'.png')[int(3*YF/4):YF,0:int(1*XF/4)]
+#
+#
+#					self.hgt[Y2[0:480,0:480],X2[0:480,0:480]] = topleftimg0[:,:]
+#					self.hgt[Y2[0:480,0:480],X2[0:480,0:480]+1] = topleftimg0[:,:]
+#					self.hgt[Y2[0:480,0:480]+1,X2[0:480,0:480]] = topleftimg0[:,:]
+#					self.hgt[Y2[0:480,0:480]+1,X2[0:480,0:480]+1] = topleftimg0[:,:]
+#
+#					self.hgt[Y2[0:480,480:960],X2[0:480,480:960]] = toprightimg0[:,:]
+#					self.hgt[Y2[0:480,480:960],X2[0:480,480:960]+1] = toprightimg0[:,:]
+#					self.hgt[Y2[0:480,480:960]+1,X2[0:480,480:960]] = toprightimg0[:,:]
+#					self.hgt[Y2[0:480,480:960]+1,X2[0:480,480:960]+1] = toprightimg0[:,:]
+#
+#					self.img0[Y2[480:960,0:480],X2[480:960,0:480]] = bottomleftimg0[:,:]
+#					self.img0[Y2[480:960,0:480],X2[480:960,0:480]+1] = bottomleftimg0[:,:]
+#					self.img0[Y2[480:960,0:480]+1,X2[480:960,0:480]] = bottomleftimg0[:,:]
+#					self.img0[Y2[480:960,0:480]+1,X2[480:960,0:480]+1] = bottomleftimg0[:,:]
+#
+#					self.hgt[Y2[480:960,480:960],X2[480:960,480:960]] = bottomrightimg0[:,:]
+#					self.hgt[Y2[480:960,480:960],X2[480:960,480:960]+1] = bottomrightimg0[:,:]
+#					self.hgt[Y2[480:960,480:960]+1,X2[480:960,480:960]] = bottomrightimg0[:,:]
+#					self.hgt[Y2[480:960,480:960]+1,X2[480:960,480:960]+1] = bottomrightimg0[:,:]
+			
+
+		if(self.orientation == 'E'):
+			self.img = qb.RotateAnticlockwise90(self.img)
+			self.img0 = qb.RotateAnticlockwise90(self.img0)
+			self.img = qb.RotateAnticlockwise90(self.img)
+			self.img0 = qb.RotateAnticlockwise90(self.img0)
+			self.img = qb.RotateAnticlockwise90(self.img)
+			self.img0 = qb.RotateAnticlockwise90(self.img0)
+			self.hgt = qb.RotateAnticlockwise90(self.hgt)
+			self.hgt = qb.RotateAnticlockwise90(self.hgt)
+			self.hgt = qb.RotateAnticlockwise90(self.hgt)
+		elif(self.orientation == 'S'):
+			self.img = qb.RotateAnticlockwise90(self.img)
+			self.img0 = qb.RotateAnticlockwise90(self.img0)
+			self.img = qb.RotateAnticlockwise90(self.img)
+			self.img0 = qb.RotateAnticlockwise90(self.img0)
+			self.hgt = qb.RotateAnticlockwise90(self.hgt)
+			self.hgt = qb.RotateAnticlockwise90(self.hgt)
+		elif(self.orientation == 'W'):
+			self.img = qb.RotateAnticlockwise90(self.img)
+			self.img0 = qb.RotateAnticlockwise90(self.img0)
+			self.hgt = qb.RotateAnticlockwise90(self.hgt)
+
+			self.img[Yc0:Yc1,:] = qb.Rotate(self.img,self.angle,self.zoom)
+			selfimg0 = Builder.ChangeColorI(self.img0,0,1474562)
+			self.img0[:,:] = qb.Rotate(self.img0,self.angle,self.zoom)
+			self.img0 = qb.FastFillBay(self.img0,1,0)
+			self.img0 = qb.FastFillBay(self.img0,1,2)
+			self.img0 = qb.FastFillBay(self.img0,0,1)
+			self.img0 = qb.FastFillBay(self.img0,2,1)
+			self.img0 = Builder.ChangeColorI(self.img0,0,1476224)
+			self.img0 = Builder.ChangeColorI(self.img0,1474562,0)
+
+#		self.img0 = Builder.ChangeColorI(self.img0,1476225,1476224)
+
+		if(self.PTSD == True):		
+			self.HighlightPoint()
+		if(self.PRSD == True):
+			self.HighlightProvince()
+		if(self.CLDD == True):
+			self.AddCloudView()
+		if(self.TODD == True):
+			self.AddDayView()			
+		if(self.zoom >= 0 and self.TOPD == True):
+			self.img[:,:] = self.img[:,:]*qb.shadr[:,:]**(qb.PositiveOrZeros(qb.DDX4(Builder.CA2I(self.hgt[:,:])))**2 + qb.PositiveOrZeros(qb.DDY4(Builder.CA2I(self.hgt[:,:])))**2)**(0.3)
+			self.img = qb.Lift(self.img,qb.CA2I(self.hgt),self.zoom,self.angle)
+		if(self.angle != 0 and self.zoom >= 2):
+#			fullimg = np.zeros(shape=(3840,3840,4),dtype=np.float16)
+#			tmpimg = plt.imread('Assets/Zoom'+str(self.zoom-1)+'/Plane'+str(self.lat)+'x'+str(self.lon)+'.png')
+#			fullimg[Ys[:,:]*2,Xs[:,:]] = tmpimg[:,:]
+#			fullimg[Ys[:,:]*2+1,Xs[:,:]] = tmpimg[:,:]
+#			fullimg[Ys[:,:]*2,Xs[:,:]+1] = tmpimg[:,:]
+#			fullimg[Ys[:,:]*2+1,Xs[:,:]+1] = tmpimg[:,:]
+
+			self.img[:,:] = qb.Rotate(self.img,self.angle,self.zoom)
+#			self.img[:,:,0:3] = qb.RotateLarge(fullimg,self.angle,self.zoom)[2460-1920:2460,0:1920,0:3]
+			if(self.TOPD == True):
+				self.img[:,:,0] = self.img[:,:,0]*E2[:,:]
+				self.img[:,:,1] = self.img[:,:,1]*E2[:,:]
+				self.img[:,:,2] = self.img[:,:,2]*E2[:,:]
+			self.img0[:,:] = qb.Rotate0(self.img0,self.angle,self.zoom,E2)
+		if(self.GADD == True):
+			self.AddGalaxyView()
+#		self.img = qb.UFF(self.img)
+#		self.img = qb.UFF(self.img)
+#		self.SettlementView()
+#		self.CharacterView()
+
+		self.AddDTCaption()
+#		plt.imsave(fname='tmp.png',arr=self.img)
+		plt.imsave(fname='tmp.png',arr=self.img[int(self.img.shape[0]/2)-540:int(self.img.shape[0]/2)+540,:])
+
+#		pixmap = QPixmap(Place+'/Zoom'+str(self.zoom)+'/Plane'+str(self.lat)+'x'+str(self.lon)+'.png')
+		pixmap = QPixmap('tmp.png')	
+		self.label.setPixmap(pixmap)
+		self.resize(pixmap.size())
+		self.adjustSize()
+
+	def WindowedProcedure(self):
 		Place = ''
 		if(self.VDisp == True):
 			Place = 'Assets'
@@ -971,17 +1451,7 @@ class MainWindow(QMainWindow):
 			self.img = qb.RotateAnticlockwise90(self.img)
 			self.img0 = qb.RotateAnticlockwise90(self.img0)
 
-#			self.img[Yc0:Yc1,:] = qb.Rotate(self.img,self.angle,self.zoom)
-#			selfimg0 = Builder.ChangeColorI(self.img0,0,1474562)
-#			self.img0[:,:] = qb.Rotate(self.img0,self.angle,self.zoom)
-#			self.img0 = qb.FastFillBay(self.img0,1,0)
-#			self.img0 = qb.FastFillBay(self.img0,1,2)
-#			self.img0 = qb.FastFillBay(self.img0,0,1)
-#			self.img0 = qb.FastFillBay(self.img0,2,1)
-#			self.img0 = Builder.ChangeColorI(self.img0,0,1476224)
-#			self.img0 = Builder.ChangeColorI(self.img0,1474562,0)
-
-#		self.img0 = Builder.ChangeColorI(self.img0,1476225,1476224)
+		self.img0 = Builder.ChangeColorI(self.img0,1476225,1476224)
 
 		if(self.PTSD == True):		
 			self.HighlightPoint()
@@ -993,7 +1463,7 @@ class MainWindow(QMainWindow):
 			self.AddDayView()			
 		if(self.GADD == True):
 			self.AddGalaxyView()
-		if(self.angle != 0 and self.zoom >= 2):
+		if(self.angle != 0 and self.zoom >= 0):
 			self.img[:,:] = qb.Rotate(self.img,self.angle,self.zoom)
 
 		self.AddDTCaption()
@@ -1088,6 +1558,13 @@ class MainWindow(QMainWindow):
 			self.StandardProcedure()
 
 	def IncreaseTime(self):
+		if(self.FDisp == True):
+#			for i in range(10):
+#				print(str(i))
+			print('Incrementing one timestep')
+			self.field, self.fieldt = qb.WaveEvolve(self.field,self.fieldt,1,0.01)
+			self.StandardProcedure()
+			return
 		self.hour += 1
 		oldday = self.day
 		if(self.hour == 24):
@@ -1344,6 +1821,15 @@ class MainWindow(QMainWindow):
 		self.RDisp = True
 		self.StandardProcedure()
 
+	def OtherDisplay(self,Name):
+		self.Place = Name
+		self.ODisp = True
+		self.RDisp = False
+		self.VDisp = False
+		self.FDisp = False
+		self.StandardProcedure()
+
+
 	def CldDisplay(self):
 		if(self.CLDD == False):
 			self.CLDD = True
@@ -1353,6 +1839,15 @@ class MainWindow(QMainWindow):
 			print('Cloud Display Deactivated...')
 		self.StandardProcedure()			
 
+
+	def TopoDisplay(self):
+		if(self.TOPD == False):
+			self.TOPD = True	
+			print('Topographic Display Activated...')			
+		else:
+			print('Topographic Display Deactivated...')
+			self.TOPD = False
+		self.StandardProcedure()
 	
 
 	def GalacticDisplay(self):
@@ -1366,7 +1861,7 @@ class MainWindow(QMainWindow):
 
 #	Run After DayView	
 	def AddGalaxyView(self):
-		if(self.zoom <= 1):
+#		if(self.zoom <= 1):
 			A = plt.imread('Assets/STAR2/Plane'+str(self.lat)+'x'+str((-1*self.lon-10000*int(self.SolarOffset)-150000*(self.hour-12) )%3600000 )+'.png')
 #			rev1920 = list(range(1919,-1,-1))
 
@@ -1380,12 +1875,25 @@ class MainWindow(QMainWindow):
 			elif(self.orientation == 'W'):
 				A = qb.RotateAnticlockwise90(A)
 
-			if(self.zoom == 0):
+			self.img[:,:,0] = A[:,:,0]*(1-E2[:,:])+self.img[:,:,0]*E2[:,:]
+			self.img[:,:,1] = A[:,:,1]*(1-E2[:,:])+self.img[:,:,1]*E2[:,:]
+			self.img[:,:,2] = A[:,:,2]*(1-E2[:,:])+self.img[:,:,2]*E2[:,:]
+
+#			if(self.zoom == 0):
 #				self.img[:,:,:] = A[:,rev1920[:],:]*D0[:,:,:]+self.img[:,:,:]*(1-D0[:,:,:])
-				self.img[:,:,:] = A[:,:,:]*D0[:,:,:]+self.img[:,:,:]*(1-D0[:,:,:])
-			if(self.zoom == 1):
+#				self.img[:,:,:] = A[:,:,:]*D0[:,:,:]+self.img[:,:,:]*(1-D0[:,:,:])
+
+#				self.img[:,:,0] = A[:,:,0]*(1-E0[:,:])+self.img[:,:,0]*E0[:,:]
+#				self.img[:,:,1] = A[:,:,1]*(1-E0[:,:])+self.img[:,:,1]*E0[:,:]
+#				self.img[:,:,2] = A[:,:,2]*(1-E0[:,:])+self.img[:,:,2]*E0[:,:]
+
+#			elif(self.zoom == 1):
 #				self.img[:,:,:] = A[:,rev1920[:],:]*D1[:,:,:]+self.img[:,:,:]*(1-D1[:,:,:])
-				self.img[:,:,:] = A[:,:,:]*D1[:,:,:]+self.img[:,:,:]*(1-D1[:,:,:])
+#				self.img[:,:,:] = A[:,:,:]*D1[:,:,:]+self.img[:,:,:]*(1-D1[:,:,:])
+#			else:
+#				self.img[:,:,0] = A[:,:,0]*(1-E2[:,:])+self.img[:,:,0]*E2[:,:]
+#				self.img[:,:,1] = A[:,:,1]*(1-E2[:,:])+self.img[:,:,1]*E2[:,:]
+#				self.img[:,:,2] = A[:,:,2]*(1-E2[:,:])+self.img[:,:,2]*E2[:,:]
 #		plt.imsave(fname='tmp.png',arr=C)
 
 	def Update(self):
@@ -1433,6 +1941,7 @@ class MainWindow(QMainWindow):
 			self.img[:,:,:] = self.img[:,:,:]*(0.25+(COL5[:,:,:]))*0.8*(E1[:,:,:])
 		else:
 			self.img[:,:,:] = self.img[:,:,:]*(0.25+(COL5[:,:,:]))*0.8
+			
 
 	def HighlightGrid(self):
 		if(self.GRID == False):
@@ -1516,38 +2025,47 @@ class MainWindow(QMainWindow):
 		self.StandardProcedure()
 
 	def IncreaseAngle(self):
-		self.angle = min(self.angle+15,60)
-		if(self.angle == 60):
+		self.angle = min(self.angle+15,90)
+		E2[:,:] = plt.imread('Assets/EShade/Zoom'+str(self.zoom)+'/A'+str(self.angle)+'.png')[:,:,0]
+		if(self.angle == 90):
 			self.HUDD = True
 		self.StandardProcedure()
 
 	def DecreaseAngle(self):
 		self.angle = max(self.angle-15,0)
+		if(self.angle == 0):
+			E2[:,:] = np.ones(shape=(1920,1920),dtype=int)
+		else:
+			E2[:,:] = plt.imread('Assets/EShade/Zoom'+str(self.zoom)+'/A'+str(self.angle)+'.png')[:,:,0]
 		self.StandardProcedure()
 
 
 	def zoomIn(self):
-		if(self.zoom >= 5):
+		if(self.zoom >= 6):
 			print("Can't zoom any further!")
 			if(self.angle == 75):
 				print("Can't zoom any further!")
-			self.angle = min(self.angle+15,75)			
+			self.angle = min(self.angle+15,75)	
 			self.StandardProcedure()
 		else:
 			self.zoom = self.zoom+1
 			if(self.zoom == 1):
 				D[:,:,:] = D1[:,:,:]
 				print('Changing star mask to 1')
+			if(self.zoom >= 2):
+				E2[:,:] = plt.imread('Assets/EShade/Zoom'+str(self.zoom)+'/A'+str(self.angle)+'.png')[:,:,0]		
 			self.StandardProcedure()
 
 	def zoomOut(self):
 		if(self.zmlvl[self.zoom] == 0):
 			print("Can't zoom out any further!")
-		elif(self.zoom >= 5):
-			if(self.angle != 0):
-				self.angle = self.angle - 15
-			else:
-				self.zoom = self.zoom-1
+#		elif(self.zoom >= 6):
+#			if(self.angle != 0):
+#				self.angle = self.angle - 15
+#			else:
+#				self.lat = int(self.lat/self.jplvl[self.zoom-1])*self.jplvl[self.zoom-1]
+#				self.lon = int(self.lon/self.jplvl[self.zoom-1])*self.jplvl[self.zoom-1]
+#				self.zoom = self.zoom-1
 		else:
 			self.lat = int(self.lat/self.jplvl[self.zoom-1])*self.jplvl[self.zoom-1]
 			self.lon = int(self.lon/self.jplvl[self.zoom-1])*self.jplvl[self.zoom-1]
@@ -1558,6 +2076,10 @@ class MainWindow(QMainWindow):
 			if(self.zoom == 0):
 				D[:,:,:] = D0[:,:,:]
 				print('Changing StarMask to 0')
+			if(self.zoom >= 2):
+#				D[:,:,:] = D0[:,:,:]
+				E2[:,:] = plt.imread('Assets/EShade/Zoom'+str(self.zoom)+'/A'+str(self.angle)+'.png')[:,:,0]		
+				print('Changing StarMask to '+str(self.zoom))
 		self.StandardProcedure()
 
 	def RotateClockwise(self):
@@ -1719,7 +2241,7 @@ class MainWindow(QMainWindow):
 #			self.img = plt.imread('MANTIS/Zoom'+str(self.zoom)+'/Plane'+str(self.lat)+'x'+str(self.lon)+'.png')
 
 
-		if(event.button() == Qt.LeftButton and (self.zoom <= 5)):
+		if(event.button() == Qt.LeftButton and (self.zoom <= 6)):
 			qtRectangle = self.frameGeometry()
 			imgtmp = self.img0[Yc0:Yc1,:]#plt.imread('IMG/Zoom'+str(self.zoom)+'/Plane'+str(self.lat)+'x'+str(self.lon)+'.png')
 			if(self.angle != 0 and self.zoom >= 2):
@@ -1741,7 +2263,11 @@ class MainWindow(QMainWindow):
 			else:
 				self.selected = len(Builder.Grid)
 				self.PTSD = False
-			self.StandardProcedure()
+			if(self.selected <= len(Builder.Grid) ):
+				self.StandardProcedure()
+			else:
+				self.WindowedProcedure()
+
 
 			
 #				self.HighlightProvince()
@@ -1756,7 +2282,7 @@ class MainWindow(QMainWindow):
 
 
 
-		if(event.button() == Qt.RightButton and (self.zoom <= 5)):
+		if(event.button() == Qt.RightButton and (self.zoom <= 6)):
 			if(self.PTSD == True):
 				self.PTSD = False
 			if(self.PRSD == False):
